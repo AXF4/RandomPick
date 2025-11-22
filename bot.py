@@ -25,7 +25,7 @@ WORD_LIST = list({lemma.name() for syn in wordnet.all_synsets() for lemma in syn
 print(f"Word list loaded: {len(WORD_LIST)} words")
 
 # -------------------
-# 봇 이벤트
+# bot event
 # -------------------
 cachekill = False  # True -> init global cache
 
