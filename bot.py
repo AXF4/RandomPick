@@ -4,6 +4,7 @@ from discord.ext import commands
 from discord import app_commands
 import nltk
 from nltk.corpus import wordnet
+import aiohttp
 import xml.etree.ElementTree as ET
 import json
 
@@ -100,9 +101,6 @@ async def pickword(interaction: discord.Interaction):
     await interaction.followup.send(f"📝 Word: **{word}**\nDefinition: {definition}")
 
 #randompic
-import aiohttp
-
-import xml.etree.ElementTree as ET
 
 @bot.tree.command(
     name="randompic",
@@ -261,22 +259,26 @@ async def testpercent(interaction: discord.Interaction, percent: float):
 )
 @app_commands.describe()
 async def faq(interaction: discord.Interaction):
+    faq_questions = {
+        "What Emojis are in randomemoji?" : "Only custom emojis that the bot involved in the guild.",
+        "Where do you pick images from?" : "Safebooru. Check the tag from there."
+    }
+
     embed = discord.Embed(
         title="FAQ <a:mikupat:1441064448235274250>",
         description=f"FAQ. something about random.",
         color=discord.Color.random()
     )
-    embed.add_field(
-        name="Q. What Emojis are in randomemoji?",
-        value="A. Only custom emojis that the bot involved in the guild.",
-        inline=False
+
+    for question, answer in faq_questions.items():
+        embed.add_field(
+            name=f"Q. {question}",
+            value=f"A. {answer}",
+            inline=False
         )
-    embed.add_field(
-        name="Q. Where do you pick images from?",
-        value="A. Safebooru. Check the tag from there.",
-        inline=False
-    )
+    
     await interaction.response.send_message(embed=embed)
+
 # -------------------
 # token.txt
 # -------------------
