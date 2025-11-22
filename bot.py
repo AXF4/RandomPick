@@ -4,6 +4,7 @@ from discord.ext import commands
 from discord import app_commands
 import nltk
 from nltk.corpus import wordnet
+import aiohttp
 import xml.etree.ElementTree as ET
 import json
 
@@ -100,9 +101,6 @@ async def pickword(interaction: discord.Interaction):
     await interaction.followup.send(f"📝 Word: **{word}**\nDefinition: {definition}")
 
 #randompic
-import aiohttp
-
-import xml.etree.ElementTree as ET
 
 @bot.tree.command(
     name="randompic",
