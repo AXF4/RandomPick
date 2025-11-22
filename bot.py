@@ -7,36 +7,36 @@ from nltk.corpus import wordnet
 import xml.etree.ElementTree as ET
 import json
 
-# WordNet 초기 다운로드 (최초 1회)
+# WordNet download
 nltk.download('wordnet')
 
 # Discord intents
 intents = discord.Intents.default()
 
-# 봇 클래스
+# bot class
 class RandomPickBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!", intents=intents)
 
 bot = RandomPickBot()
 
-# 봇 시작 시 WordNet 단어 리스트 캐싱
+# get wordnet wordlist 
 WORD_LIST = list({lemma.name() for syn in wordnet.all_synsets() for lemma in syn.lemmas()})
 print(f"Word list loaded: {len(WORD_LIST)} words")
 
 # -------------------
 # 봇 이벤트
 # -------------------
-cashkill = False  # True일 때만 글로벌 캐시 초기화
+cachekill = False  # True -> init global cache
 
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
 
     try:
-        if cashkill:
-            app_id = bot.user.id  # 봇 애플리케이션 ID
-            # 글로벌 명령어 가져오기
+        if cachekill:
+            app_id = bot.user.id  # bot app ID
+            # get global command
             all_global = await bot.tree.fetch_commands(guild=None)
             
             deleted_count = 0
@@ -45,10 +45,10 @@ async def on_ready():
                 deleted_count += 1
             print(f"Deleted {deleted_count} global commands")
 
-        # 글로벌 명령어 동기화
+        # global sync
         synced = await bot.tree.sync()
         print(f"Global commands synced: {len(synced)}")
-        print("✅ Commands:", [cmd.name for cmd in synced])
+        print("Commands:", [cmd.name for cmd in synced])
 
     except Exception as e:
         print("Error during global cache reset:", e)
@@ -88,12 +88,12 @@ async def pickfloat(interaction: discord.Interaction, min: float, max: float):
     description="WordNet WordPicker"
 )
 async def pickword(interaction: discord.Interaction):
-    # 오래 걸릴 수 있으므로 defer
+    #wait
     await interaction.response.defer()
 
     word = random.choice(WORD_LIST)
 
-    # 뜻 가져오기 (첫 synset 기준)
+    # get meaning
     synsets = wordnet.synsets(word)
     definition = synsets[0].definition() if synsets else "IDK"
 
@@ -117,7 +117,7 @@ async def randompic(interaction: discord.Interaction, tag: str = None):
     else:
         tag_query = ""
 
-    # ----- (1) XML로 count 가져오기 -----
+    # ----- (1) XML -> count -----
     count_url = (
         "https://safebooru.org/index.php?page=dapi&s=post&q=index"
         f"&tags={tag_query}"
@@ -142,13 +142,13 @@ async def randompic(interaction: discord.Interaction, tag: str = None):
         await interaction.followup.send("⚠️ No results for that tag")
         return
 
-    # ----- (2) offset 범위 계산 -----
+    # ----- (2) offset range calc -----
     limit = 5000
     max_offset = max(total_count - limit, 0)
 
     offset = random.randint(0, max_offset)
 
-    # ----- (3) JSON 요청 -----
+    # ----- (3) JSON  -----
     json_url = (
         "https://safebooru.org/index.php?page=dapi&s=post&q=index"
         f"&json=1&limit={limit}&offset={offset}"
@@ -163,7 +163,7 @@ async def randompic(interaction: discord.Interaction, tag: str = None):
 
             text = await resp.text()
 
-            # JSON 응답인지 확인 (Safebooru는 가끔 빈 응답 줌)
+            # check JSON 
             if not text.strip().startswith("["):
                 await interaction.followup.send("⚠️ Server returned invalid JSON")
                 return
@@ -174,7 +174,7 @@ async def randompic(interaction: discord.Interaction, tag: str = None):
         await interaction.followup.send("⚠️ No images found in this range")
         return
 
-    # ----- (4) 랜덤 선택 -----
+    # ----- (4) random choose -----
     pic = random.choice(data)
 
     directory = pic.get("directory")
@@ -210,7 +210,7 @@ async def randompic(interaction: discord.Interaction, tag: str = None):
 async def randomemoji(interaction: discord.Interaction, emoji_type: str = None):
     await interaction.response.defer()
 
-    # 봇이 속한 모든 서버의 커스텀 이모지 합치기
+    # assemble all custom emojis
     all_emojis = []
     for guild in bot.guilds:
         all_emojis.extend(guild.emojis)
@@ -219,7 +219,7 @@ async def randomemoji(interaction: discord.Interaction, emoji_type: str = None):
         await interaction.followup.send("⚠️ Bot has no custom emojis in any server.")
         return
 
-    # type 필터
+    # type filter
     t = emoji_type.lower() if emoji_type else ""
     if t == "gif":
         all_emojis = [e for e in all_emojis if e.animated]
@@ -278,7 +278,7 @@ async def faq(interaction: discord.Interaction):
     )
     await interaction.response.send_message(embed=embed)
 # -------------------
-# token.txt에서 읽어서 실행
+# token.txt
 # -------------------
 with open("token.txt", "r") as f:
     TOKEN = f.readline().strip()
