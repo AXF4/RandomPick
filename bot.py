@@ -115,6 +115,11 @@ async def randompic(interaction: discord.Interaction, tag: str = None):
     else:
         tag_query = ""
 
+    # Check for colon in tag
+    if tag and ":" in tag:
+        await interaction.followup.send("NO.")
+        return
+
     # ----- (1) XML -> count -----
     count_url = (
         "https://safebooru.org/index.php?page=dapi&s=post&q=index"
@@ -143,7 +148,6 @@ async def randompic(interaction: discord.Interaction, tag: str = None):
     # ----- (2) offset range calc -----
     limit = 5000
     max_offset = max(total_count - limit, 0)
-
     offset = random.randint(0, max_offset)
 
     # ----- (3) JSON  -----
