@@ -141,6 +141,13 @@ async def randompic(interaction: discord.Interaction, tag: str = None):
         await interaction.followup.send("⚠️ Failed to parse XML count")
         return
 
+    # If the user searched with 2 or more tags and the total results are
+    # small (<= 20), refuse to respond with images.
+    tag_count = len([t for t in tag_query.split(" ") if t]) if tag_query else 0
+    if tag_count >= 2 and total_count <= 20:
+        await interaction.followup.send("NO.")
+        return
+
     if total_count == 0:
         await interaction.followup.send("⚠️ No results for that tag")
         return
