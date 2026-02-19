@@ -375,7 +375,7 @@ async def randomgif(interaction: discord.Interaction, search: str = None):
         await interaction.followup.send(embed=embed)
 
 # -------------------
-# token.txt
+# .env
 # -------------------
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
@@ -385,3 +385,4 @@ GIPHY_SEARCH_URL = "https://api.giphy.com/v1/gifs/search"
 GIPHY_RANDOM_URL = "https://api.giphy.com/v1/gifs/random"
 
 bot.run(TOKEN)
+
