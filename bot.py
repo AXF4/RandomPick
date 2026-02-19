@@ -303,7 +303,7 @@ async def randomgif(interaction: discord.Interaction, search: str = None):
     async with aiohttp.ClientSession() as session:
 
         # ----------------------------
-        # 1️⃣ 검색어가 있는 경우
+        # if search
         # ----------------------------
         
         if search:
@@ -347,7 +347,7 @@ async def randomgif(interaction: discord.Interaction, search: str = None):
                     return
 
         # ----------------------------
-        # 2️⃣ search 없거나 결과 없음 → 랜덤
+        # no search
         # ----------------------------
         params = {
             "api_key": GIPHY,
