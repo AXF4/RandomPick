@@ -7,6 +7,8 @@ from nltk.corpus import wordnet
 import aiohttp
 import xml.etree.ElementTree as ET
 import json
+from dotenv import load_dotenv
+import os
 
 # WordNet download
 nltk.download('wordnet')
@@ -290,10 +292,96 @@ async def faq(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed)
 
+@bot.tree.command(
+    name="randomgif",
+    description="Random GIF from GIPHY"
+)
+@app_commands.describe(search="Search keyword (optional)")
+async def randomgif(interaction: discord.Interaction, search: str = None):
+    await interaction.response.defer()
+
+    async with aiohttp.ClientSession() as session:
+
+        # ----------------------------
+        # 1️⃣ 검색어가 있는 경우
+        # ----------------------------
+        
+        if search:
+            params = {
+                "api_key": GIPHY,
+                "q": search,
+                "limit": 25,
+                "rating": "pg-13"
+            }
+
+            blocked_words = ["sex", "porn", "nude", "hentai"]
+
+            if search and any(word in search.lower() for word in blocked_words):
+                await interaction.followup.send("❌ That keyword is not allowed.")
+                return
+
+
+            async with session.get(GIPHY_SEARCH_URL, params=params) as resp:
+                
+
+                if resp.status != 200:
+                    await interaction.followup.send(
+                        f"⚠️ Search failed (HTTP {resp.status})"
+                    )
+                    return
+
+                data = await resp.json()
+                results = data.get("data", [])
+
+                if results:
+                    gif = random.choice(results)
+                    gif_url = gif["images"]["original"]["url"]
+
+                    embed = discord.Embed(
+                        title=f"🎬 Random GIF for '{search}'",
+                        color=discord.Color.random()
+                    )
+                    embed.set_image(url=gif_url)
+
+                    await interaction.followup.send(embed=embed)
+                    return
+
+        # ----------------------------
+        # 2️⃣ search 없거나 결과 없음 → 랜덤
+        # ----------------------------
+        params = {
+            "api_key": GIPHY,
+            "rating": "pg-13"
+        }
+
+        async with session.get(GIPHY_RANDOM_URL, params=params) as resp:
+
+            if resp.status != 200:
+                await interaction.followup.send(
+                    f"⚠️ GIPHY random failed (HTTP {resp.status})"
+                )
+                return
+
+            data = await resp.json()
+
+        gif_url = data["data"]["images"]["original"]["url"]
+
+        embed = discord.Embed(
+            title="🎲 Random GIF",
+            color=discord.Color.random()
+        )
+        embed.set_image(url=gif_url)
+
+        await interaction.followup.send(embed=embed)
+
 # -------------------
 # token.txt
 # -------------------
-with open("token.txt", "r") as f:
-    TOKEN = f.readline().strip()
+load_dotenv()
+TOKEN = os.getenv("TOKEN")
+GIPHY = os.getenv("GIPHY")
+
+GIPHY_SEARCH_URL = "https://api.giphy.com/v1/gifs/search"
+GIPHY_RANDOM_URL = "https://api.giphy.com/v1/gifs/random"
 
 bot.run(TOKEN)
