@@ -10,6 +10,7 @@ import json
 from dotenv import load_dotenv
 import os
 
+
 # WordNet download
 nltk.download('wordnet')
 
@@ -26,6 +27,100 @@ bot = RandomPickBot()
 # get wordnet wordlist 
 WORD_LIST = list({lemma.name() for syn in wordnet.all_synsets() for lemma in syn.lemmas()})
 print(f"Word list loaded: {len(WORD_LIST)} words")
+
+class WordQuizView(discord.ui.View):
+    def __init__(self, options, correct_word, definition, header="", timeout=30):
+        super().__init__(timeout=timeout)
+
+        self.correct_word = correct_word
+        self.definition = definition
+        self.answered = False
+        self.header = header
+
+        for option in options:
+            self.add_item(QuizButton(option, correct_word, self))
+
+    async def on_timeout(self):
+        if self.answered:
+            return
+
+        self.answered = True
+
+        for item in self.children:
+            item.disabled = True
+
+            if normalize(item.label) == normalize(self.correct_word):
+                item.style = discord.ButtonStyle.success
+            else:
+                item.style = discord.ButtonStyle.danger
+
+        await self.message.edit(
+            content=f"{self.header}"
+                    f"📖 Definition:\n{self.definition}\n\n"
+                    "<:mikucry:1441064496041820221>\n"
+                    f"Time's up!\nCorrect answer: **{self.correct_word}**",
+            view=self
+        )
+class QuizButton(discord.ui.Button):
+    def __init__(self, label, correct_word, parent_view):
+        super().__init__(label=label, style=discord.ButtonStyle.primary)
+        self.correct_word = correct_word
+        self.parent_view = parent_view
+
+    async def callback(self, interaction: discord.Interaction):
+        if self.parent_view.answered:
+            return
+
+        self.parent_view.answered = True
+
+        for item in self.parent_view.children:
+            item.disabled = True
+
+            if normalize(item.label) == normalize(self.correct_word):
+                item.style = discord.ButtonStyle.success
+            else:
+                item.style = discord.ButtonStyle.danger
+
+        if normalize(self.label) == normalize(self.correct_word):
+            result = "<:mikuwow:1441065277579198525>\n"
+            f"You're Right! Correct answer: **{self.correct_word}**"
+        else:
+            result = (
+                "<:mikucry:1441064496041820221>\n"
+                f"It's Wrong... Correct answer: **{self.correct_word}**"
+            )
+
+        await interaction.response.edit_message(
+            content=f"{self.parent_view.header}"
+                    f"📖 Definition:\n{self.parent_view.definition}\n\n{result}",
+            view=self.parent_view
+        )
+
+def normalize(word):
+    return word.replace("_", " ").replace("-", " ").lower().strip()
+
+def get_syn_ant_hard(word):
+    synsets = wordnet.synsets(word)
+    if not synsets:
+        return [], []
+
+    syn = synsets[0]
+
+    synonyms = set()
+    antonyms = set()
+
+    for lemma in syn.lemmas():
+        name = lemma.name().replace("_", " ").replace("-", " ")
+
+        if name != word:
+            synonyms.add(name)
+
+        for ant in lemma.antonyms():
+            antonyms.add(
+                ant.name().replace("_", " ").replace("-", " ")
+            )
+
+    return list(synonyms), list(antonyms)
 
 # -------------------
 # bot event
@@ -101,6 +196,291 @@ async def pickword(interaction: discord.Interaction):
     definition = synsets[0].definition() if synsets else "IDK"
 
     await interaction.followup.send(f"📝 Word: **{word}**\nDefinition: {definition}")
+
+
+#-------------------------
+# wordquiz
+#-------------------------
+@bot.tree.command(
+    name="wordquiz",
+    description="Make Random English Quiz"
+)
+@app_commands.describe(
+    mode="easy | normal | hard",
+    choices="2..10 or hell"
+)
+@app_commands.choices(mode=[
+    app_commands.Choice(name="easy", value="easy"),
+    app_commands.Choice(name="normal", value="normal"),
+    app_commands.Choice(name="hard", value="hard"),
+])
+async def wordquiz(
+    interaction: discord.Interaction,
+    mode: app_commands.Choice[str] = None,
+    choices: str = None
+):
+
+    mode_value = mode.value if mode else "easy"
+
+    # choices
+    hell_mode = False
+
+    if choices is None:
+        choice_count = 3
+
+    elif choices.lower() == "hell":
+        hell_mode = True
+        choice_count = None
+
+    else:
+        if not choices.isdigit():
+            await interaction.response.send_message("Invalid choices value.")
+            return
+
+        choice_count = int(choices)
+
+        if choice_count < 2 or choice_count > 10:
+            await interaction.response.send_message("Choices must be between 2 and 10.")
+            return
+
+    # hell works only in hard
+    if hell_mode and mode_value != "hard":
+        await interaction.response.send_message(
+            "Hell only sleeps in **HARD** places..."
+        )
+        return
+
+    correct_word = random.choice(WORD_LIST)
+    synsets = wordnet.synsets(correct_word)
+
+    if not synsets:
+        await interaction.response.send_message("Failed to get word.")
+        return
+
+    definition = synsets[0].definition()
+    correct_pos = synsets[0].pos()
+
+    wrong_words = []
+
+    # --------------------
+    # EASY
+    # --------------------
+    if mode_value == "easy":
+
+        wrong_needed = (choice_count - 1) if not hell_mode else 2
+
+        while len(wrong_words) < wrong_needed:
+            w = random.choice(WORD_LIST)
+            if w != correct_word and w not in wrong_words:
+                wrong_words.append(w)
+
+    # --------------------
+    # NORMAL
+    # --------------------
+    elif mode_value == "normal":
+
+        same_pos_words = []
+
+        for w in WORD_LIST:
+            if w == correct_word:
+                continue
+
+            syns = wordnet.synsets(w)
+            if not syns:
+                continue
+
+            if syns[0].pos() != correct_pos:
+                continue
+
+            # noun -> filter proper noun
+            if correct_pos == 'n':
+                if correct_word[0].isupper():
+                    if not w[0].isupper():
+                        continue
+                else:
+                    if w[0].isupper():
+                        continue
+
+            same_pos_words.append(w)
+
+        wrong_needed = choice_count - 1
+
+        if len(same_pos_words) < wrong_needed:
+            await interaction.response.send_message("Not enough same POS words.")
+            return
+
+        wrong_words = random.sample(same_pos_words, wrong_needed)
+
+    # --------------------
+    # HARD
+    # --------------------
+    elif mode_value == "hard":
+
+        # Hard words candidates
+        while True:
+            candidate = random.choice(WORD_LIST)
+            synsets = wordnet.synsets(candidate)
+
+            if not synsets:
+                continue
+
+            syn = synsets[0]
+
+            # no proper nouns
+            if syn.instance_hypernyms():
+                continue
+
+            definition = syn.definition()
+            syns, ants = get_syn_ant_hard(candidate)
+
+            # normalize
+            normalized_seen = set()
+            pool = []
+
+            for w in syns + ants:
+                n = normalize(w)
+
+                if n == normalize(candidate):
+                    continue
+
+                if n in normalized_seen:
+                    continue
+
+                normalized_seen.add(n)
+                pool.append(w)
+
+            # hell 
+            if hell_mode:
+                if len(pool) < 1:
+                    continue
+
+                correct_word = candidate
+                break
+
+            # just hard
+            else:
+                if len(pool) >= (choice_count - 1):
+                    correct_word = candidate
+                    break
+
+
+        # hell mode
+        if hell_mode:
+
+            min_choices = 20   # Hell min choices
+
+            # pool = syn + ant
+            normalized_seen = set()
+            pool = []
+
+            for w in syns + ants:
+                n = normalize(w)
+
+                if n == normalize(correct_word):
+                    continue
+
+                if n in normalized_seen:
+                    continue
+
+                normalized_seen.add(n)
+                pool.append(w)
+
+            # if lacking
+            if len(pool) < min_choices - 1:
+
+                same_pos_words = []
+
+                for w in WORD_LIST:
+                    if w == correct_word:
+                        continue
+
+                    synsets_w = wordnet.synsets(w)
+                    if not synsets_w:
+                        continue
+
+                    if synsets_w[0].pos() != syn.pos():
+                        continue
+
+                    n = normalize(w)
+
+                    if n == normalize(correct_word):
+                        continue
+
+                    if n in normalized_seen:
+                        continue
+
+                    same_pos_words.append(w)
+
+                random.shuffle(same_pos_words)
+
+                for w in same_pos_words:
+                    if len(pool) >= min_choices - 1:
+                        break
+
+                    n = normalize(w)
+                    normalized_seen.add(n)
+                    pool.append(w)
+                else:
+                    while len(pool) < min_choices - 1:
+                        w = random.choice(WORD_LIST)
+                        n = normalize(w)
+                        if n==normalize(correct_word):
+                            continue
+                        if n==normalized_seen:
+                            continue
+                        if n in pool:
+                            continue
+                        if w in pool:
+                            continue
+                        pool.append(w)
+
+
+
+            correct_word = candidate
+            choices_list = pool + [correct_word]
+            random.shuffle(choices_list)
+
+            view = WordQuizView(choices_list, correct_word, definition)
+
+            message = (
+                "⚠️ **Caution!** Hard mode will likely present problems that rely solely on luck to solve.\n\n"
+                f"📖 Definition:\n{definition}\n\n"
+                f"🔥 Hell Mode Activated\n"
+                f"⏳ You have 30 seconds!"
+            )
+
+            await interaction.response.send_message(content=message, view=view)
+            view.message = await interaction.original_response()
+            return
+
+        # --------------------
+        # just hard (2~10)
+        # --------------------
+        wrong_words = random.sample(pool, choice_count - 1)
+
+    # --------------------
+    # selections
+    # --------------------
+    if not hell_mode:
+        choices_list = wrong_words + [correct_word]
+        random.shuffle(choices_list)
+
+    view = WordQuizView(choices_list, correct_word, definition)
+
+    if mode_value == "hard":
+        message = (
+            "⚠️ **Caution!** Hard mode will likely present problems that rely solely on luck to solve.\n\n"
+            f"📖 Definition:\n{definition}\n\n"
+            f"⏳ You have 30 seconds!"
+        )
+    else:
+        message = (
+            f"📖 Definition:\n{definition}\n\n"
+            f"⏳ You have 30 seconds!"
+        )
+
+    await interaction.response.send_message(content=message, view=view)
+    view.message = await interaction.original_response()
 
 #randompic
 
@@ -300,82 +680,113 @@ async def faq(interaction: discord.Interaction):
 async def randomgif(interaction: discord.Interaction, search: str = None):
     await interaction.response.defer()
 
+    rating = "pg-13"
+
     async with aiohttp.ClientSession() as session:
 
-        # ----------------------------
+        # =====================================================
         # if search
-        # ----------------------------
-        
+        # =====================================================
         if search:
+            try:
+                # check total
+                params = {
+                    "api_key": GIPHY,
+                    "q": search,
+                    "limit": 1,
+                    "rating": rating
+                }
+
+                async with session.get(GIPHY_SEARCH_URL, params=params) as resp:
+                    if resp.status != 200:
+                        await interaction.followup.send(
+                            f"⚠️ GIPHY search failed (HTTP {resp.status})"
+                        )
+                        return
+
+                    data = await resp.json()
+
+                total_count = data.get("pagination", {}).get("total_count", 0)
+
+                # no search -> fallback
+                if total_count == 0:
+                    print("No search results. Falling back to random.")
+                else:
+                    # offset 최대 4999 제한
+                    max_offset = min(total_count - 1, 4999)
+                    random_offset = random.randint(0, max_offset)
+
+                    params = {
+                        "api_key": GIPHY,
+                        "q": search,
+                        "limit": 1,
+                        "offset": random_offset,
+                        "rating": rating
+                    }
+
+                    async with session.get(GIPHY_SEARCH_URL, params=params) as resp:
+                        if resp.status != 200:
+                            await interaction.followup.send(
+                                f"⚠️ GIPHY search failed (HTTP {resp.status})"
+                            )
+                            return
+
+                        data = await resp.json()
+
+                    if data.get("data"):
+                        gif_url = data["data"][0]["images"]["original"]["url"]
+
+                        embed = discord.Embed(
+                            title=f"🎬 Random GIF for '{search}'",
+                            color=discord.Color.random()
+                        )
+                        embed.set_image(url=gif_url)
+
+                        await interaction.followup.send(embed=embed)
+                        return
+
+            except Exception as e:
+                print("Search error:", e)
+
+        # =====================================================
+        # 2️⃣ else
+        # =====================================================
+        try:
             params = {
                 "api_key": GIPHY,
-                "q": search,
-                "limit": 25,
-                "rating": "pg-13"
+                "rating": rating
             }
 
-            blocked_words = ["sex", "porn", "nude", "hentai"]
-
-            if search and any(word in search.lower() for word in blocked_words):
-                await interaction.followup.send("❌ That keyword is not allowed.")
-                return
-
-
-            async with session.get(GIPHY_SEARCH_URL, params=params) as resp:
-                
-
+            async with session.get(GIPHY_RANDOM_URL, params=params) as resp:
                 if resp.status != 200:
                     await interaction.followup.send(
-                        f"⚠️ Search failed (HTTP {resp.status})"
+                        f"⚠️ GIPHY random failed (HTTP {resp.status})"
                     )
                     return
 
                 data = await resp.json()
-                results = data.get("data", [])
 
-                if results:
-                    gif = random.choice(results)
-                    gif_url = gif["images"]["original"]["url"]
+        except Exception as e:
+            print("Random error:", e)
+            await interaction.followup.send("⚠️ Unexpected error.")
+            return
 
-                    embed = discord.Embed(
-                        title=f"🎬 Random GIF for '{search}'",
-                        color=discord.Color.random()
-                    )
-                    embed.set_image(url=gif_url)
+    gif_url = data.get("data", {}).get("images", {}).get("original", {}).get("url")
 
-                    await interaction.followup.send(embed=embed)
-                    return
+    if not gif_url:
+        await interaction.followup.send("⚠️ Failed to retrieve GIF.")
+        return
 
-        # ----------------------------
-        # no search
-        # ----------------------------
-        params = {
-            "api_key": GIPHY,
-            "rating": "pg-13"
-        }
+    embed = discord.Embed(
+        title="🎲 Random GIF",
+        color=discord.Color.random()
+    )
+    embed.set_image(url=gif_url)
 
-        async with session.get(GIPHY_RANDOM_URL, params=params) as resp:
-
-            if resp.status != 200:
-                await interaction.followup.send(
-                    f"⚠️ GIPHY random failed (HTTP {resp.status})"
-                )
-                return
-
-            data = await resp.json()
-
-        gif_url = data["data"]["images"]["original"]["url"]
-
-        embed = discord.Embed(
-            title="🎲 Random GIF",
-            color=discord.Color.random()
-        )
-        embed.set_image(url=gif_url)
-
-        await interaction.followup.send(embed=embed)
+    await interaction.followup.send(embed=embed)
 
 # -------------------
-# .env
+# token.txt
 # -------------------
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
@@ -385,4 +796,3 @@ GIPHY_SEARCH_URL = "https://api.giphy.com/v1/gifs/search"
 GIPHY_RANDOM_URL = "https://api.giphy.com/v1/gifs/random"
 
 bot.run(TOKEN)
-
