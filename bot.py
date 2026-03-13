@@ -9,6 +9,19 @@ import xml.etree.ElementTree as ET
 import json
 from dotenv import load_dotenv
 import os
+import socket
+import time
+
+def wait_for_internet():
+    while True:
+        try:
+            socket.create_connection(("8.8.8.8", 53), timeout=3)
+            print("Internet connection is successful! Start the bot!")
+            break
+        except OSError:
+            print("Internet connection failed... retry in 5 seconds...")
+            time_interval = 5
+            time.sleep(time_interval)
 
 
 # WordNet download
@@ -789,10 +802,14 @@ async def randomgif(interaction: discord.Interaction, search: str = None):
 # token.txt
 # -------------------
 load_dotenv()
+
+wait_for_internet()
+
 TOKEN = os.getenv("TOKEN")
 GIPHY = os.getenv("GIPHY")
 
 GIPHY_SEARCH_URL = "https://api.giphy.com/v1/gifs/search"
 GIPHY_RANDOM_URL = "https://api.giphy.com/v1/gifs/random"
+
 
 bot.run(TOKEN)
