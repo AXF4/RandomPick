@@ -514,6 +514,8 @@ async def randompic(interaction: discord.Interaction, tag: str = None):
     if tag and ":" in tag:
         await interaction.followup.send("NO.")
         return
+    if tag and "yaoi" in tag:
+        await interaction.followup.send("NO.")
 
     # ----- (1) XML -> count -----
     count_url = (
@@ -537,9 +539,9 @@ async def randompic(interaction: discord.Interaction, tag: str = None):
         return
 
     # If the user searched with 2 or more tags and the total results are
-    # small (<= 20), refuse to respond with images.
+    # small (<= 10), refuse to respond with images.
     tag_count = len([t for t in tag_query.split(" ") if t]) if tag_query else 0
-    if tag_count >= 2 and total_count <= 20:
+    if tag_count >= 2 and total_count <= 10:
         await interaction.followup.send("NO.")
         return
 
