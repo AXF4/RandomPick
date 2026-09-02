@@ -119,24 +119,20 @@ def resolve_source_url(source: str) -> str:
 
     source = source.strip()
 
-    # 1. pximg.net 링크인 경우 (예: https://i.pximg.net/img-original/img/.../12345678_p0.jpg)
+    # pximg.net 
     if "pximg.net" in source:
-        # 파일명 앞의 숫자 ID(artwork id) 추출
         match = re.search(r'(\d+)(?:_p\d+)?\.(?:jpg|png|gif)', source)
         if match:
             return f"https://www.pixiv.net/artworks/{match.group(1)}"
 
-    # 2. 구형 pixiv 링크인 경우 (예: illust_id=12345678)
     if "illust_id=" in source:
         match = re.search(r'illust_id=(\d+)', source)
         if match:
             return f"https://www.pixiv.net/artworks/{match.group(1)}"
 
-    # 3. 그 외 일반적인 HTTP/HTTPS URL인 경우 그대로 반환
     if source.startswith(("http://", "https://")):
         return source
 
-    # 4. 숫자만 달랑 적혀있는 경우 (간혹 Booru에 pixiv ID 숫자만 저장된 경우)
     if source.isdigit():
         return f"https://www.pixiv.net/artworks/{source}"
 
@@ -147,11 +143,9 @@ class PicDetailView(discord.ui.View):
         super().__init__(timeout=None)
         self.tags = tags
 
-        # 1. Safebooru 상세 페이지 링크 버튼
         safebooru_url = f"https://safebooru.org/index.php?page=post&s=view&id={post_id}"
         self.add_item(discord.ui.Button(label="View", url=safebooru_url))
 
-        # 2. 원본 소스 링크 버튼 (유효한 HTTP 링크가 있을 때만 활성화)
         resolved_source = resolve_source_url(source_url)
 
         if resolved_source:
@@ -160,12 +154,10 @@ class PicDetailView(discord.ui.View):
             disabled_btn = discord.ui.Button(label="Source", style=discord.ButtonStyle.secondary, disabled=True, emoji="🚫")
             self.add_item(disabled_btn)
 
-    # 3. 누른 사람에게만 보이는 태그 정보 버튼
     @discord.ui.button(label="Info", style=discord.ButtonStyle.primary)
     async def info_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         formatted_tags = ", ".join(self.tags.split()) if self.tags else "None"
         
-        # 디스코드 메시지 글자 수 제한(2000자) 대응
         if len(formatted_tags) > 1900:
             formatted_tags = formatted_tags[:1900] + "... (truncated)"
 
