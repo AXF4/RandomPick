@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 import os
 import socket
 import time
+import re
 
 def wait_for_internet():
     while True:
@@ -108,6 +109,71 @@ class QuizButton(discord.ui.Button):
                     f"📖 Definition:\n{self.parent_view.definition}\n\n{result}",
             view=self.parent_view
         )
+
+def resolve_source_url(source: str) -> str:
+    """
+    pximg 직링크나 pixiv 관련 주소를 실제 열람 가능한 pixiv.net 작품 페이지로 변환
+    """
+    if not source:
+        return ""
+
+    source = source.strip()
+
+    # 1. pximg.net 링크인 경우 (예: https://i.pximg.net/img-original/img/.../12345678_p0.jpg)
+    if "pximg.net" in source:
+        # 파일명 앞의 숫자 ID(artwork id) 추출
+        match = re.search(r'(\d+)(?:_p\d+)?\.(?:jpg|png|gif)', source)
+        if match:
+            return f"https://www.pixiv.net/artworks/{match.group(1)}"
+
+    # 2. 구형 pixiv 링크인 경우 (예: illust_id=12345678)
+    if "illust_id=" in source:
+        match = re.search(r'illust_id=(\d+)', source)
+        if match:
+            return f"https://www.pixiv.net/artworks/{match.group(1)}"
+
+    # 3. 그 외 일반적인 HTTP/HTTPS URL인 경우 그대로 반환
+    if source.startswith(("http://", "https://")):
+        return source
+
+    # 4. 숫자만 달랑 적혀있는 경우 (간혹 Booru에 pixiv ID 숫자만 저장된 경우)
+    if source.isdigit():
+        return f"https://www.pixiv.net/artworks/{source}"
+
+    return ""
+
+class PicDetailView(discord.ui.View):
+    def __init__(self, post_id: int, source_url: str, tags: str):
+        super().__init__(timeout=None)
+        self.tags = tags
+
+        # 1. Safebooru 상세 페이지 링크 버튼
+        safebooru_url = f"https://safebooru.org/index.php?page=post&s=view&id={post_id}"
+        self.add_item(discord.ui.Button(label="View", url=safebooru_url))
+
+        # 2. 원본 소스 링크 버튼 (유효한 HTTP 링크가 있을 때만 활성화)
+        resolved_source = resolve_source_url(source_url)
+
+        if resolved_source:
+            self.add_item(discord.ui.Button(label="Source", url=resolved_source))
+        else:
+            disabled_btn = discord.ui.Button(label="Source", style=discord.ButtonStyle.secondary, disabled=True, emoji="🚫")
+            self.add_item(disabled_btn)
+
+    # 3. 누른 사람에게만 보이는 태그 정보 버튼
+    @discord.ui.button(label="Info", style=discord.ButtonStyle.primary)
+    async def info_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        formatted_tags = ", ".join(self.tags.split()) if self.tags else "None"
+        
+        # 디스코드 메시지 글자 수 제한(2000자) 대응
+        if len(formatted_tags) > 1900:
+            formatted_tags = formatted_tags[:1900] + "... (truncated)"
+
+        await interaction.response.send_message(
+            f"🏷️ **Image Tags:**\n```{formatted_tags}```",
+            ephemeral=True
+        )
+
 
 def normalize(word):
     return word.replace("_", " ").replace("-", " ").lower().strip()
@@ -585,6 +651,9 @@ async def randompic(interaction: discord.Interaction, tag: str = None):
 
     directory = pic.get("directory")
     image = pic.get("image")
+    post_id = pic.get("id")
+    source_url = pic.get("source", "").strip()
+    tags = pic.get("tags", "")
 
     if not directory or not image:
         await interaction.followup.send("⚠️ Invalid image data")
@@ -598,8 +667,8 @@ async def randompic(interaction: discord.Interaction, tag: str = None):
         color=discord.Color.random()
     )
     embed.set_image(url=image_url)
-
-    await interaction.followup.send(embed=embed)
+    view = PicDetailView(post_id=post_id, source_url=source_url, tags=tags)
+    await interaction.followup.send(embed=embed, view=view)
 
 
 
