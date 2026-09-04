@@ -139,15 +139,15 @@ def resolve_source_url(source: str) -> str:
     return ""
 
 class PicDetailView(discord.ui.View):
-    def __init__(self, post_id: int, source_url: str, tags: str):
+    def __init__(self, post_id: int, source_url: str, tags: str, original_tag: str = ""):
         super().__init__(timeout=None)
         self.tags = tags
+        self.original_tag = original_tag
 
         safebooru_url = f"https://safebooru.org/index.php?page=post&s=view&id={post_id}"
         self.add_item(discord.ui.Button(label="View", url=safebooru_url))
 
         resolved_source = resolve_source_url(source_url)
-
         if resolved_source:
             self.add_item(discord.ui.Button(label="Source", url=resolved_source))
         else:
@@ -157,7 +157,6 @@ class PicDetailView(discord.ui.View):
     @discord.ui.button(label="Info", style=discord.ButtonStyle.primary)
     async def info_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         formatted_tags = ", ".join(self.tags.split()) if self.tags else "None"
-        
         if len(formatted_tags) > 1900:
             formatted_tags = formatted_tags[:1900] + "... (truncated)"
 
@@ -165,6 +164,17 @@ class PicDetailView(discord.ui.View):
             f"🏷️ **Image Tags:**\n```{formatted_tags}```",
             ephemeral=True
         )
+
+    @discord.ui.button(label="OneMore", style=discord.ButtonStyle.success)
+    async def onemore_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+
+        err_msg, embed, new_view = await fetch_safebooru_image(self.original_tag)
+        if err_msg:
+            await interaction.followup.send(err_msg, ephemeral=True)
+            return
+
+        await interaction.followup.send(embed=embed, view=new_view)
 
 
 def normalize(word):
@@ -554,6 +564,77 @@ async def wordquiz(
     view.message = await interaction.original_response()
 
 #randompic
+async def fetch_safebooru_image(tag_query: str):
+    count_url = (
+        "https://safebooru.org/index.php?page=dapi&s=post&q=index"
+        f"&tags={tag_query}"
+        "&limit=1"
+    )
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(count_url) as resp:
+            if resp.status != 200:
+                return "⚠️ Failed to get count", None, None
+            xml_text = await resp.text()
+
+    try:
+        root = ET.fromstring(xml_text)
+        total_count = int(root.attrib.get("count", 0))
+    except Exception:
+        return "⚠️ Failed to parse XML count", None, None
+
+    tag_count = len([t for t in tag_query.split(" ") if t]) if tag_query else 0
+    if tag_count >= 2 and total_count <= 10:
+        return "NO.", None, None
+
+    if total_count == 0:
+        return "⚠️ No results for that tag", None, None
+
+    limit = 5000
+    max_offset = max(total_count - limit, 0)
+    offset = random.randint(0, max_offset)
+
+    json_url = (
+        "https://safebooru.org/index.php?page=dapi&s=post&q=index"
+        f"&json=1&limit={limit}&offset={offset}"
+        f"&tags={tag_query}"
+    )
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(json_url) as resp:
+            if resp.status != 200:
+                return "⚠️ Failed to load JSON", None, None
+            text = await resp.text()
+
+            if not text.strip().startswith("["):
+                return "⚠️ Server returned invalid JSON", None, None
+
+            data = json.loads(text)
+
+    if not data:
+        return "⚠️ No images found in this range", None, None
+
+    pic = random.choice(data)
+    directory = pic.get("directory")
+    image = pic.get("image")
+    post_id = pic.get("id")
+    source_url = pic.get("source", "").strip()
+    tags = pic.get("tags", "")
+
+    if not directory or not image:
+        return "⚠️ Invalid image data", None, None
+
+    image_url = f"https://safebooru.org/images/{directory}/{image}"
+
+    embed = discord.Embed(
+        title="🎨 Random Image!",
+        description=f"Tag: {tag_query or 'None'}",
+        color=discord.Color.random()
+    )
+    embed.set_image(url=image_url)
+
+    view = PicDetailView(post_id=post_id, source_url=source_url, tags=tags, original_tag=tag_query)
+    return None, embed, view
 
 @bot.tree.command(
     name="randompic",
@@ -568,100 +649,16 @@ async def randompic(interaction: discord.Interaction, tag: str = None):
     else:
         tag_query = ""
 
-    # Check for colon in tag
-    if tag and ":" in tag:
-        await interaction.followup.send("NO.")
-        return
-    if tag and "yaoi" in tag:
-        await interaction.followup.send("NO.")
-
-    # ----- (1) XML -> count -----
-    count_url = (
-        "https://safebooru.org/index.php?page=dapi&s=post&q=index"
-        f"&tags={tag_query}"
-        "&limit=1"
-    )
-
-    async with aiohttp.ClientSession() as session:
-        async with session.get(count_url) as resp:
-            if resp.status != 200:
-                await interaction.followup.send("⚠️ Failed to get count")
-                return
-            xml_text = await resp.text()
-
-    try:
-        root = ET.fromstring(xml_text)
-        total_count = int(root.attrib.get("count", 0))
-    except:
-        await interaction.followup.send("⚠️ Failed to parse XML count")
-        return
-
-    # If the user searched with 2 or more tags and the total results are
-    # small (<= 10), refuse to respond with images.
-    tag_count = len([t for t in tag_query.split(" ") if t]) if tag_query else 0
-    if tag_count >= 2 and total_count <= 10:
+    if tag and (":" in tag or "yaoi" in tag):
         await interaction.followup.send("NO.")
         return
 
-    if total_count == 0:
-        await interaction.followup.send("⚠️ No results for that tag")
+    err_msg, embed, view = await fetch_safebooru_image(tag_query)
+    if err_msg:
+        await interaction.followup.send(err_msg)
         return
 
-    # ----- (2) offset range calc -----
-    limit = 5000
-    max_offset = max(total_count - limit, 0)
-    offset = random.randint(0, max_offset)
-
-    # ----- (3) JSON  -----
-    json_url = (
-        "https://safebooru.org/index.php?page=dapi&s=post&q=index"
-        f"&json=1&limit={limit}&offset={offset}"
-        f"&tags={tag_query}"
-    )
-
-    async with aiohttp.ClientSession() as session:
-        async with session.get(json_url) as resp:
-            if resp.status != 200:
-                await interaction.followup.send("⚠️ Failed to load JSON")
-                return
-
-            text = await resp.text()
-
-            # check JSON 
-            if not text.strip().startswith("["):
-                await interaction.followup.send("⚠️ Server returned invalid JSON")
-                return
-
-            data = json.loads(text)
-
-    if not data:
-        await interaction.followup.send("⚠️ No images found in this range")
-        return
-
-    # ----- (4) random choose -----
-    pic = random.choice(data)
-
-    directory = pic.get("directory")
-    image = pic.get("image")
-    post_id = pic.get("id")
-    source_url = pic.get("source", "").strip()
-    tags = pic.get("tags", "")
-
-    if not directory or not image:
-        await interaction.followup.send("⚠️ Invalid image data")
-        return
-
-    image_url = f"https://safebooru.org/images/{directory}/{image}"
-
-    embed = discord.Embed(
-        title="🎨 Random Image!",
-        description=f"Tag: {tag or 'None'}",
-        color=discord.Color.random()
-    )
-    embed.set_image(url=image_url)
-    view = PicDetailView(post_id=post_id, source_url=source_url, tags=tags)
     await interaction.followup.send(embed=embed, view=view)
-
 
 
 
