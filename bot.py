@@ -12,6 +12,7 @@ import os
 import socket
 import time
 import re
+import urllib.parse
 
 def wait_for_internet():
     while True:
@@ -110,31 +111,140 @@ class QuizButton(discord.ui.Button):
             view=self.parent_view
         )
 
+def split_tag_tokens(tag: str) -> list[str]:
+
+    tag = tag.strip()
+    tokens = []
+    current = []
+    in_paren = False
+
+    for char in tag:
+        if char == '(':
+            in_paren = True
+            current.append(char)
+        elif char == ')':
+            in_paren = False
+            current.append(char)
+        elif char == '_' and not in_paren:
+            token = "".join(current).strip()
+            if token:
+                tokens.append(token)
+            current = []
+        else:
+            current.append(char)
+
+    last_token = "".join(current).strip()
+    if last_token:
+        tokens.append(last_token)
+
+    return tokens
+
+def generate_tag_candidates(tag: str) -> list[str]:
+    tokens = split_tag_tokens(tag)
+    n = len(tokens)
+    if n <= 1:
+        return []
+
+    candidates = []
+    for length in range(n - 1, 0, -1):
+        left = "_".join(tokens[:length])
+        if left and left not in candidates and left != tag:
+            candidates.append(left)
+
+        right = "_".join(tokens[n - length:])
+        if right and right not in candidates and right != tag:
+            candidates.append(right)
+
+    return candidates
+
+async def check_tag_exists(session: aiohttp.ClientSession, tag: str) -> bool:
+    encoded_name = urllib.parse.quote(tag, safe="")
+    
+    url = f"https://safebooru.org/index.php?page=dapi&s=tag&q=index&name={encoded_name}"
+    try:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=4)) as resp:
+            if resp.status != 200:
+                return False
+            xml_text = await resp.text()
+            root = ET.fromstring(xml_text)
+            
+            for tag_elem in root.findall("tag"):
+                name = tag_elem.attrib.get("name", "")
+                count = int(tag_elem.attrib.get("count", 0))
+                if name.lower() == tag.lower() and count > 0:
+                    return True
+            return False
+    except Exception:
+        return False
+
+async def find_tag_hint(session: aiohttp.ClientSession, original_tag: str) -> str:
+    target_tag = original_tag.split()[0] if original_tag else ""
+    candidates = generate_tag_candidates(target_tag)
+
+    for candidate in candidates:
+        if await check_tag_exists(session, candidate):
+            return candidate
+    return ""
+
+def clean_and_validate_url(url: str) -> str:
+    if not url:
+        return ""
+
+
+    url = url.strip().split()[0]
+
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            return ""
+
+        safe_path = urllib.parse.quote(urllib.parse.unquote(parsed.path), safe="/:@!$&'()*+,;=")
+        safe_query = urllib.parse.quote(urllib.parse.unquote(parsed.query), safe="=&?:@!$'()*+,;/")
+        
+        encoded_url = urllib.parse.urlunparse((
+            parsed.scheme,
+            parsed.netloc,
+            safe_path,
+            parsed.params,
+            safe_query,
+            parsed.fragment
+        ))
+        
+        if re.search(r'\s', encoded_url):
+            return ""
+
+        return encoded_url
+    except Exception:
+        return ""
+
 def resolve_source_url(source: str) -> str:
-    """
-    pximg 직링크나 pixiv 관련 주소를 실제 열람 가능한 pixiv.net 작품 페이지로 변환
-    """
     if not source:
         return ""
 
     source = source.strip()
 
-    # pximg.net 
+    # 1. pximg.net
     if "pximg.net" in source:
         match = re.search(r'(\d+)(?:_p\d+)?\.(?:jpg|png|gif)', source)
         if match:
             return f"https://www.pixiv.net/artworks/{match.group(1)}"
 
+    # 2. illust_id= 
     if "illust_id=" in source:
         match = re.search(r'illust_id=(\d+)', source)
         if match:
             return f"https://www.pixiv.net/artworks/{match.group(1)}"
 
-    if source.startswith(("http://", "https://")):
-        return source
-
+    # 3. id only
     if source.isdigit():
         return f"https://www.pixiv.net/artworks/{source}"
+
+    url_match = re.search(r'https?://[^\s<>"]+|www\.[^\s<>"]+', source)
+    if url_match:
+        found_url = url_match.group(0)
+        if found_url.startswith("www."):
+            found_url = "https://" + found_url
+        return clean_and_validate_url(found_url)
 
     return ""
 
@@ -148,10 +258,22 @@ class PicDetailView(discord.ui.View):
         self.add_item(discord.ui.Button(label="View", url=safebooru_url))
 
         resolved_source = resolve_source_url(source_url)
+        added_source = False
+
         if resolved_source:
-            self.add_item(discord.ui.Button(label="Source", url=resolved_source))
-        else:
-            disabled_btn = discord.ui.Button(label="Source", style=discord.ButtonStyle.secondary, disabled=True, emoji="🚫")
+            try:
+                self.add_item(discord.ui.Button(label="Source", url=resolved_source))
+                added_source = True
+            except Exception:
+                added_source = False
+
+        if not added_source:
+            disabled_btn = discord.ui.Button(
+                label="Source", 
+                style=discord.ButtonStyle.secondary, 
+                disabled=True, 
+                emoji="🚫"
+            )
             self.add_item(disabled_btn)
 
     @discord.ui.button(label="Info", style=discord.ButtonStyle.primary)
@@ -567,7 +689,7 @@ async def wordquiz(
 async def fetch_safebooru_image(tag_query: str):
     count_url = (
         "https://safebooru.org/index.php?page=dapi&s=post&q=index"
-        f"&tags={tag_query}"
+        f"&tags={urllib.parse.quote(tag_query)}"
         "&limit=1"
     )
 
@@ -577,30 +699,32 @@ async def fetch_safebooru_image(tag_query: str):
                 return "⚠️ Failed to get count", None, None
             xml_text = await resp.text()
 
-    try:
-        root = ET.fromstring(xml_text)
-        total_count = int(root.attrib.get("count", 0))
-    except Exception:
-        return "⚠️ Failed to parse XML count", None, None
+        try:
+            root = ET.fromstring(xml_text)
+            total_count = int(root.attrib.get("count", 0))
+        except Exception:
+            return "⚠️ Failed to parse XML count", None, None
 
-    tag_count = len([t for t in tag_query.split(" ") if t]) if tag_query else 0
-    if tag_count >= 2 and total_count <= 10:
-        return "NO.", None, None
+        tag_count = len([t for t in tag_query.split(" ") if t]) if tag_query else 0
+        if tag_count >= 2 and total_count <= 10:
+            return "NO.", None, None
 
-    if total_count == 0:
-        return "⚠️ No results for that tag", None, None
+        if total_count == 0:
+            hint = await find_tag_hint(session, tag_query)
+            if hint:
+                return f"⚠️ No results for that tag.\nDid you mean: **`{hint}`**?", None, None
+            return "⚠️ No results for that tag", None, None
 
-    limit = 5000
-    max_offset = max(total_count - limit, 0)
-    offset = random.randint(0, max_offset)
+        limit = 5000
+        max_offset = max(total_count - limit, 0)
+        offset = random.randint(0, max_offset)
 
-    json_url = (
-        "https://safebooru.org/index.php?page=dapi&s=post&q=index"
-        f"&json=1&limit={limit}&offset={offset}"
-        f"&tags={tag_query}"
-    )
+        json_url = (
+            "https://safebooru.org/index.php?page=dapi&s=post&q=index"
+            f"&json=1&limit={limit}&offset={offset}"
+            f"&tags={urllib.parse.quote(tag_query)}"
+        )
 
-    async with aiohttp.ClientSession() as session:
         async with session.get(json_url) as resp:
             if resp.status != 200:
                 return "⚠️ Failed to load JSON", None, None
@@ -642,8 +766,11 @@ async def fetch_safebooru_image(tag_query: str):
 )
 @app_commands.describe(tag="tag")
 async def randompic(interaction: discord.Interaction, tag: str = None):
-    await interaction.response.defer()
-
+    try:
+        await interaction.response.defer(thinking=True)
+    except discord.NotFound:
+        print("⚠️ Interaction expired (timed out before defer could be sent).")
+        return
     if tag:
         tag_query = tag.replace(",", " ").replace("  ", " ").strip()
     else:
@@ -652,7 +779,6 @@ async def randompic(interaction: discord.Interaction, tag: str = None):
     if tag and (":" in tag or "yaoi" in tag):
         await interaction.followup.send("NO.")
         return
-
     err_msg, embed, view = await fetch_safebooru_image(tag_query)
     if err_msg:
         await interaction.followup.send(err_msg)
