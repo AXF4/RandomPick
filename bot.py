@@ -13,6 +13,7 @@ import socket
 import time
 import re
 import urllib.parse
+from datetime import datetime
 
 def wait_for_internet():
     while True:
@@ -249,55 +250,150 @@ def resolve_source_url(source: str) -> str:
     return ""
 
 class PicDetailView(discord.ui.View):
-    def __init__(self, post_id: int, source_url: str, tags: str, original_tag: str = ""):
+    def __init__(self, post_id: int = None, source_url: str = None):
         super().__init__(timeout=None)
-        self.tags = tags
-        self.original_tag = original_tag
 
-        safebooru_url = f"https://safebooru.org/index.php?page=post&s=view&id={post_id}"
-        self.add_item(discord.ui.Button(label="View", url=safebooru_url))
+        if post_id:
+            safebooru_url = f"https://safebooru.org/index.php?page=post&s=view&id={post_id}"
+            self.add_item(discord.ui.Button(label="View", url=safebooru_url))
 
-        resolved_source = resolve_source_url(source_url)
-        added_source = False
+            resolved_source = resolve_source_url(source_url)
+            if resolved_source:
+                try:
+                    self.add_item(discord.ui.Button(label="Source", url=resolved_source))
+                except Exception:
+                    pass
+            else:
+                self.add_item(discord.ui.Button(
+                    label="Source", 
+                    style=discord.ButtonStyle.secondary, 
+                    disabled=True, 
+                    emoji="🚫"
+                ))
 
-        if resolved_source:
-            try:
-                self.add_item(discord.ui.Button(label="Source", url=resolved_source))
-                added_source = True
-            except Exception:
-                added_source = False
-
-        if not added_source:
-            disabled_btn = discord.ui.Button(
-                label="Source", 
-                style=discord.ButtonStyle.secondary, 
-                disabled=True, 
-                emoji="🚫"
-            )
-            self.add_item(disabled_btn)
-
-    @discord.ui.button(label="Info", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="Info", style=discord.ButtonStyle.primary, custom_id="safebooru:info_v2")
     async def info_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        formatted_tags = ", ".join(self.tags.split()) if self.tags else "None"
-        if len(formatted_tags) > 1900:
-            formatted_tags = formatted_tags[:1900] + "... (truncated)"
+        await interaction.response.defer(ephemeral=True)
 
-        await interaction.response.send_message(
-            f"🏷️ **Image Tags:**\n```{formatted_tags}```",
-            ephemeral=True
+        embed = interaction.message.embeds[0] if interaction.message.embeds else None
+        footer_text = embed.footer.text if (embed and embed.footer) else ""
+        
+        post_id = None
+        if "ID: " in footer_text:
+            raw_id = footer_text.split("ID: ")[-1].strip()
+            if raw_id.isdigit():
+                post_id = raw_id
+
+        if not post_id:
+            await interaction.followup.send("⚠️ 이미지를 식별할 수 없습니다.", ephemeral=True)
+            return
+
+        # 1. Safebooru Post
+        post_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&id={post_id}&json=1"
+        comment_url = f"https://safebooru.org/index.php?page=dapi&s=comment&q=index&post_id={post_id}"
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(post_url) as resp:
+                if resp.status != 200:
+                    await interaction.followup.send("⚠️ 정보를 불러오지 못했습니다.", ephemeral=True)
+                    return
+                post_data = await resp.json()
+
+            if not post_data:
+                await interaction.followup.send("⚠️ 게시글 정보를 찾을 수 없습니다.", ephemeral=True)
+                return
+
+            post = post_data[0]
+
+            # 2. (Safebooru comment API XML)
+            comment_count = 0
+            try:
+                async with session.get(comment_url, timeout=aiohttp.ClientTimeout(total=3)) as c_resp:
+                    if c_resp.status == 200:
+                        c_text = await c_resp.text()
+                        c_root = ET.fromstring(c_text)
+                        comment_count = len(c_root.findall("comment"))
+            except Exception:
+                comment_count = 0
+
+            # 3. character tags
+            raw_tags = post.get("tags", "").strip().split()
+            characters = []
+            
+            view_page_url = f"https://safebooru.org/index.php?page=post&s=view&id={post_id}"
+            try:
+                async with session.get(view_page_url, timeout=aiohttp.ClientTimeout(total=4)) as page_resp:
+                    if page_resp.status == 200:
+                        html_text = await page_resp.text()
+                        char_matches = re.findall(r'class="tag-type-character"[^>]*>.*?<a[^>]*>([^<]+)</a>', html_text, re.DOTALL)
+                        if char_matches:
+                            characters = [c.strip().replace(" ", "_") for c in char_matches if c.strip() and c.strip() != "?"]
+            except Exception:
+                pass
+
+            # if failed
+            if not characters and raw_tags:
+                fallback_chars = [t for t in raw_tags if "(" in t and ")" in t and not any(t.endswith(ext) for ext in ["_(cosplay)", "_(style)"])]
+                if fallback_chars:
+                    characters = fallback_chars
+
+        score = post.get("score", 0)
+        rating_map = {"s": "Safe", "q": "Questionable", "e": "Explicit", "general": "General"}
+        raw_rating = post.get("rating", "Unknown")
+        rating = rating_map.get(raw_rating, raw_rating.capitalize())
+        width = post.get("width", 0)
+        height = post.get("height", 0)
+        dimensions = f"{width} × {height}" if width and height else "Unknown"
+
+        char_text = ", ".join(characters) if characters else "Unknown / None"
+
+        all_tags = ", ".join(raw_tags) if raw_tags else "None"
+        if len(all_tags) > 1000:
+            all_tags = all_tags[:1000] + "... (truncated)"
+
+        info_embed = discord.Embed(
+            title=f"ℹ️ Post Details — #{post_id}",
+            color=discord.Color.blue()
         )
+        info_embed.add_field(name="🆔 ID", value=str(post_id), inline=True)
+        info_embed.add_field(name="⭐ Score", value=str(score), inline=True)
+        info_embed.add_field(name="🔞 Rating", value=rating, inline=True)
+        info_embed.add_field(name="📐 Dimensions", value=dimensions, inline=True)
+        info_embed.add_field(name="💬 Comments", value=str(comment_count), inline=True)
+        info_embed.add_field(name="👤 Characters", value=f"`{char_text}`", inline=False)
+        info_embed.add_field(name="🏷️ Tags", value=f"```{all_tags}```", inline=False)
 
-    @discord.ui.button(label="OneMore", style=discord.ButtonStyle.success)
+        await interaction.followup.send(embed=info_embed, ephemeral=True)
+
+    @discord.ui.button(label="OneMore", style=discord.ButtonStyle.success, custom_id="safebooru:onemore_v2")
     async def onemore_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
 
-        err_msg, embed, new_view = await fetch_safebooru_image(self.original_tag)
+        tag_query = ""
+        if interaction.message.embeds:
+            desc = interaction.message.embeds[0].description or ""
+            if desc.startswith("Tag: "):
+                tag_query = desc.replace("Tag: ", "").strip()
+                if tag_query == "None":
+                    tag_query = ""
+
+        err_msg, new_embed, new_view = await fetch_safebooru_image(tag_query)
         if err_msg:
             await interaction.followup.send(err_msg, ephemeral=True)
             return
 
-        await interaction.followup.send(embed=embed, view=new_view)
+        # 새 embed와 함께 갱신된 new_view를 전송
+        await interaction.followup.send(embed=new_embed, view=new_view)
 
+class RandomPickBot(commands.Bot):
+    def __init__(self):
+        super().__init__(command_prefix=[], intents=intents)
+
+    async def setup_hook(self):
+        # 재부팅 후에도 버튼 이벤트를 감지할 수 있도록 상시 등록
+        self.add_view(PicDetailView())
+
+bot = RandomPickBot()
 
 def normalize(word):
     return word.replace("_", " ").replace("-", " ").lower().strip()
@@ -332,7 +428,12 @@ cachekill = False  # True -> init global cache
 
 @bot.event
 async def on_ready():
-    print(f"Logged in as {bot.user}")
+    print(f"Logged in as {bot.user}!")
+    now = datetime.now()
+    formatted_now = now.strftime("%Y-%m-%d %H:%M:%S")
+    activity = discord.CustomActivity(name=f"Last Boot: {formatted_now} (UTC+9)")
+
+    await bot.change_presence(status=discord.Status.online, activity=activity)
 
     try:
         if cachekill:
@@ -750,14 +851,18 @@ async def fetch_safebooru_image(tag_query: str):
 
     image_url = f"https://safebooru.org/images/{directory}/{image}"
 
+    # fetch_safebooru_image 내부 embed 생성 부분:
     embed = discord.Embed(
         title="🎨 Random Image!",
         description=f"Tag: {tag_query or 'None'}",
         color=discord.Color.random()
     )
     embed.set_image(url=image_url)
+    
+    # footer에 태그 전체를 넣지 않고, ID만 깔끔하게 표시
+    embed.set_footer(text=f"ID: {post_id}")
 
-    view = PicDetailView(post_id=post_id, source_url=source_url, tags=tags, original_tag=tag_query)
+    view = PicDetailView(post_id=post_id, source_url=source_url)
     return None, embed, view
 
 @bot.tree.command(
