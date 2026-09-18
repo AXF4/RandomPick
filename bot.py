@@ -15,12 +15,12 @@ from datetime import datetime
 import asyncio
 
 # -------------------
-# 1. 설정 및 환경 변수 (최상단 배치)
+# 1. setting n .env
 # -------------------
 load_dotenv()
 
-UNDER_MAINTENANCE = False  # True -> only for devs
-cachekill = False        # True -> init global cache
+UNDER_MAINTENANCE = False  # True -> maintenance
+cachekill = False          # True -> init global cache 
 
 TOKEN = os.getenv("TOKEN")
 GIPHY = os.getenv("GIPHY")
@@ -50,13 +50,9 @@ def safe_get(session: aiohttp.ClientSession, url: str, **kwargs):
             global last_request_time
             async with request_lock:
                 elapsed = time.time() - last_request_time
-                if elapsed < 0.6:  # 0.5초 -> 0.6초로 여유 확보
+                if elapsed < 0.6:
                     await asyncio.sleep(0.6 - elapsed)
                 last_request_time = time.time()
-
-            # 헤더가 따로 안 넘어왔다면 DEFAULT_HEADERS 강제 적용
-            if "headers" not in kwargs:
-                kwargs["headers"] = DEFAULT_HEADERS
 
             self.resp = await session.get(url, **kwargs)
             return self.resp
@@ -66,21 +62,16 @@ def safe_get(session: aiohttp.ClientSession, url: str, **kwargs):
 
     return SafeRequestContext()
 
+# header
 DEFAULT_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-    "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Sec-Ch-Ua": '"Chromium";v="128", "Not;A=Brand";v="24", "Google Chrome";v="128"',
-    "Sec-Ch-Ua-Mobile": "?0",
-    "Sec-Ch-Ua-Platform": '"Windows"',
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-    "Sec-Fetch-Site": "none",
-    "Sec-Fetch-User": "?1",
-    "Upgrade-Insecure-Requests": "1",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "*/*",
     "Referer": "https://safebooru.org/",
 }
 
+# -------------------
+# utility
+# -------------------
 BOOT_TIME_STR = datetime.now().strftime("%Y%m%d_%H%M%S")
 LOG_FILENAME = f"{BOOT_TIME_STR}.log"
 
@@ -93,12 +84,12 @@ def write_stat_log(user: discord.User | discord.Member, action_name: str):
     except Exception as e:
         print(f"[Logging Error] {e}")
 
-# 영폭 문자: \u200b (0), \u200c (1)
+# 영폭 문자(Zero-Width Character): \u200b (0), \u200c (1)
 ZW_0 = "\u200b"
 ZW_1 = "\u200c"
 
 def hide_user_id(user_id: int) -> str:
-    binary = bin(user_id)[2:]  # 2진수 변환
+    binary = bin(user_id)[2:]
     return "".join(ZW_1 if b == "1" else ZW_0 for b in binary)
 
 def extract_hidden_user_id(text: str) -> int | None:
@@ -112,7 +103,7 @@ def extract_hidden_user_id(text: str) -> int | None:
         return None
 
 # -------------------
-# class def
+# 3. UI 및 뷰 클래스
 # -------------------
 intents = discord.Intents.default()
 
@@ -162,18 +153,18 @@ class PicDetailView(discord.ui.View):
         super().__init__(timeout=None)
         if post_id:
             safebooru_url = f"https://safebooru.org/index.php?page=post&s=view&id={post_id}"
-            self.add_item(discord.ui.Button(label="View", url=safebooru_url,row=1))
+            self.add_item(discord.ui.Button(label="View", url=safebooru_url, row=1))
+            
             resolved_source = resolve_source_url(source_url)
             if resolved_source:
                 try:
-                    self.add_item(discord.ui.Button(label="Source", url=resolved_source,row=1))
+                    self.add_item(discord.ui.Button(label="Source", url=resolved_source, row=1))
                 except Exception:
                     pass
             else:
                 self.add_item(discord.ui.Button(label="Source", style=discord.ButtonStyle.secondary, disabled=True, emoji="🚫", row=1))
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        # check maintenance
         if UNDER_MAINTENANCE and interaction.user.id not in DEV_IDS:
             if not interaction.response.is_done():
                 await interaction.response.send_message(
@@ -187,7 +178,6 @@ class PicDetailView(discord.ui.View):
                 )
             return False
 
-        # 3s cooldown
         now = time.time()
         last_clicked = self.user_cooldowns.get(interaction.user.id, 0.0)
         cooldown_time = 3.0
@@ -207,9 +197,27 @@ class PicDetailView(discord.ui.View):
                 )
             return False
 
-        # cooldown go
         self.user_cooldowns[interaction.user.id] = now
         return True
+
+    @discord.ui.button(label="OneMore", style=discord.ButtonStyle.success, custom_id="safebooru:onemore_v2", row=0)
+    async def onemore_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        write_stat_log(interaction.user, "Button: OneMore")
+        await interaction.response.defer()
+        tag_query = ""
+        if interaction.message.embeds:
+            desc = interaction.message.embeds[0].description or ""
+            if desc.startswith("Tag: "):
+                tag_query = desc.replace("Tag: ", "").strip()
+                if tag_query == "None":
+                    tag_query = ""
+
+        err_msg, new_embed, new_view = await fetch_safebooru_image(tag_query, user=interaction.user)
+        if err_msg:
+            await interaction.followup.send(err_msg, ephemeral=True)
+            return
+
+        await interaction.followup.send(embed=new_embed, view=new_view)
 
     @discord.ui.button(label="Info", style=discord.ButtonStyle.primary, custom_id="safebooru:info_v2", row=0)
     async def info_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -294,26 +302,7 @@ class PicDetailView(discord.ui.View):
 
         await interaction.followup.send(embed=info_embed, ephemeral=True)
 
-    @discord.ui.button(label="OneMore", style=discord.ButtonStyle.success, custom_id="safebooru:onemore_v2",row=0)
-    async def onemore_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        write_stat_log(interaction.user, "Button: OneMore")
-        await interaction.response.defer()
-        tag_query = ""
-        if interaction.message.embeds:
-            desc = interaction.message.embeds[0].description or ""
-            if desc.startswith("Tag: "):
-                tag_query = desc.replace("Tag: ", "").strip()
-                if tag_query == "None":
-                    tag_query = ""
-
-        err_msg, new_embed, new_view = await fetch_safebooru_image(tag_query, user=interaction.user)
-        if err_msg:
-            await interaction.followup.send(err_msg, ephemeral=True)
-            return
-
-        await interaction.followup.send(embed=new_embed, view=new_view)
-
-    @discord.ui.button(label="Bookmark", emoji="🔖", style=discord.ButtonStyle.secondary, custom_id="safebooru:bookmark_v1",row=0)
+    @discord.ui.button(label="Bookmark", emoji="🔖", style=discord.ButtonStyle.secondary, custom_id="safebooru:bookmark_v1", row=0)
     async def bookmark_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = interaction.message.embeds[0] if interaction.message.embeds else None
         
@@ -322,11 +311,8 @@ class PicDetailView(discord.ui.View):
             return
 
         try:
-            # Send the existing embed directly to the user's DMs
-            # Including link buttons (View/Source) improves usability in DMs
             dm_channel = await interaction.user.create_dm()
             
-            # Extract only URL link buttons from the original view for the DM
             dm_view = discord.ui.View()
             for item in self.children:
                 if isinstance(item, discord.ui.Button) and item.url:
@@ -342,7 +328,6 @@ class PicDetailView(discord.ui.View):
             await interaction.response.send_message("📬 Image sent to your DMs!", ephemeral=True)
 
         except discord.Forbidden:
-            # Triggered if the user has direct messages disabled
             await interaction.response.send_message(
                 "❌ Unable to send a DM. Please make sure **'Direct Messages'** from server members is enabled in your server privacy settings.",
                 ephemeral=True
@@ -356,7 +341,6 @@ class PicDetailView(discord.ui.View):
         embed = interaction.message.embeds[0] if interaction.message.embeds else None
         footer_text = embed.footer.text if (embed and embed.footer) else ""
 
-        # id solve
         requester_id = extract_hidden_user_id(footer_text)
 
         is_requester = (requester_id and interaction.user.id == requester_id)
@@ -364,16 +348,19 @@ class PicDetailView(discord.ui.View):
 
         if is_requester or is_admin:
             write_stat_log(interaction.user, "Button: Delete Image")
-            await interaction.message.delete()
+            try:
+                await interaction.message.delete()
+            except discord.Forbidden:
+                await interaction.response.send_message(
+                    "⚠️ The bot is not in this server, lacking permission to delete messages.", 
+                    ephemeral=True
+                )
         else:
             await interaction.response.send_message(
                 "🚫 Only the user who requested this can remove this!",
                 ephemeral=True
             )
 
-# -------------------
-# tag hint
-# -------------------
 class TagHintView(discord.ui.View):
     def __init__(self, suggested_tag: str):
         super().__init__(timeout=60)
@@ -398,9 +385,10 @@ class TagHintView(discord.ui.View):
             await interaction.followup.send(err_msg, ephemeral=True)
             return
 
-        await interaction.channel.send(embed=embed, view=view)
+        await interaction.followup.send(embed=embed, view=view)
+
 # -------------------
-# def custom tree
+# 4. custom tree n bot setting
 # -------------------
 class MaintenanceTree(app_commands.CommandTree):
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -445,20 +433,17 @@ class RandomPickBot(commands.Bot):
 bot = RandomPickBot()
 
 # -------------------
-# Booru search
+# 5. booru
 # -------------------
 async def find_tag_hint(session: aiohttp.ClientSession, original_tag: str) -> str:
     if not original_tag:
         return ""
 
     target_tag = original_tag.strip().split()[0].lower()
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
 
     autocomplete_url = f"https://safebooru.org/autocomplete.php?q={urllib.parse.quote(target_tag)}"
     try:
-        async with safe_get(session, autocomplete_url, headers=headers, timeout=aiohttp.ClientTimeout(total=4)) as resp:
+        async with safe_get(session, autocomplete_url, timeout=aiohttp.ClientTimeout(total=4)) as resp:
             if resp.status == 200:
                 data = await resp.json(content_type=None)
                 if data and isinstance(data, list):
@@ -475,7 +460,7 @@ async def find_tag_hint(session: aiohttp.ClientSession, original_tag: str) -> st
         "&orderby=count&limit=3"
     )
     try:
-        async with safe_get(session, dapi_url, headers=headers, timeout=aiohttp.ClientTimeout(total=4)) as resp:
+        async with safe_get(session, dapi_url, timeout=aiohttp.ClientTimeout(total=4)) as resp:
             if resp.status == 200:
                 xml_text = await resp.text()
                 root = ET.fromstring(xml_text)
@@ -492,7 +477,6 @@ async def find_tag_hint(session: aiohttp.ClientSession, original_tag: str) -> st
 async def fetch_safebooru_image(tag_query: str, user: discord.User | discord.Member = None):
     count_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&tags={urllib.parse.quote(tag_query)}&limit=1"
     
-    # headers= 키워드를 정확히 붙여서 세션 생성
     async with aiohttp.ClientSession(headers=DEFAULT_HEADERS) as session:
         async with safe_get(session, count_url) as resp:
             if resp.status != 200:
@@ -506,8 +490,6 @@ async def fetch_safebooru_image(tag_query: str, user: discord.User | discord.Mem
             return "⚠️ Failed to parse XML count", None, None
 
         tag_count = len([t for t in tag_query.split(" ") if t]) if tag_query else 0
-        if tag_count >= 2 and total_count <= 10:
-            return "NO.", None, None
 
         if total_count == 0:
             hint = await find_tag_hint(session, tag_query)
@@ -552,9 +534,6 @@ async def fetch_safebooru_image(tag_query: str, user: discord.User | discord.Mem
     view = PicDetailView(post_id=post_id, source_url=source_url)
     return None, embed, view
 
-# -------------------
-# callback autocorrect
-# -------------------
 async def tag_autocomplete(
     interaction: discord.Interaction,
     current: str,
@@ -565,7 +544,6 @@ async def tag_autocomplete(
     tokens = current.replace(",", " ").split()
     target_token = tokens[-1].lower() if tokens else ""
 
-    # 최소 2글자 이상 입력 시 검색
     if len(target_token) < 2:
         return []
 
@@ -579,8 +557,14 @@ async def tag_autocomplete(
                     data = await resp.json(content_type=None)
                     if data and isinstance(data, list):
                         for item in data[:10]:
-                            raw_value = str(item.get("value", "")) if isinstance(item, dict) else str(item)
-                            clean_tag = re.sub(r'\s*\(\d+\)$', '', raw_value).strip()
+                            if isinstance(item, dict):
+                                raw_value = item.get("value") or item.get("label") or ""
+                            else:
+                                raw_value = item
+
+                            clean_tag = re.sub(r'\s*\(\d+\)$', '', str(raw_value)).strip()
+                            if not clean_tag:
+                                continue
 
                             if len(tokens) > 1:
                                 prefix = " ".join(tokens[:-1]) + " "
@@ -590,8 +574,8 @@ async def tag_autocomplete(
 
                             choices.append(
                                 app_commands.Choice(
-                                    name=final_val[:100],
-                                    value=final_val[:100]
+                                    name=str(final_val)[:100],
+                                    value=str(final_val)[:100]
                                 )
                             )
     except Exception as e:
@@ -599,8 +583,9 @@ async def tag_autocomplete(
         return []
 
     return choices
+
 # -------------------
-# commands & events
+# 6. commands n listeners
 # -------------------
 @bot.event
 async def on_ready():
@@ -643,25 +628,23 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
 @app_commands.checks.cooldown(1, 3.0, key=lambda i: i.user.id)
 async def randompic(interaction: discord.Interaction, tag: str = None):
     try:
-        await interaction.response.defer(thinking=True, ephemeral=True)
+        await interaction.response.defer(thinking=True)
     except discord.NotFound:
         print("⚠️ Interaction expired.")
         return
 
     tag_query = tag.replace(",", " ").replace("  ", " ").strip() if tag else ""
-    if tag and (":" in tag or "yaoi" in tag):
+    if tag and ("yaoi" in tag):
         await interaction.followup.send("NO.", ephemeral=True)
         return
 
-    # interaction.user 전달
     err_msg, embed, view = await fetch_safebooru_image(tag_query, user=interaction.user)
     
     if err_msg:
-        await interaction.followup.send(err_msg, view=view, ephemeral=True)
+        await interaction.edit_original_response(content=err_msg, view=view)
         return
 
-    await interaction.channel.send(embed=embed, view=view)
-    await interaction.delete_original_response()
+    await interaction.edit_original_response(embed=embed, view=view)
 
 @bot.tree.command(name="randomemoji", description="Pick a random emoji from all bot servers")
 @app_commands.describe(emoji_type="gif/pic")
@@ -687,8 +670,12 @@ async def randomemoji(interaction: discord.Interaction, emoji_type: str = None):
 @bot.tree.command(name="faq", description="Show me FAQ!")
 async def faq(interaction: discord.Interaction):
     faq_questions = {
-        "What Emojis are in randomemoji?": "Only custom emojis that the bot involved in the guild.",
-        "Where do you pick images from?": "Safebooru. Check the tag from there."
+        "What emojis are included in randomemoji?": "Only custom emojis from servers where the bot is present.",
+        "Where do you get the images from?": "Safebooru. You can check the tags there.",
+        "Who made this?": "AXF4",
+        "What is the current version?": "v3.0.3",
+        "How can I invite the bot?": "[👉 Click here to invite the bot!](https://discord.com/oauth2/authorize?client_id=1440352198709088306&permissions=4503739214129152&integration_type=0&scope=bot)",
+        "Can I use this on my personal account?": "[👉 Click here to add to your account!](https://discord.com/oauth2/authorize?client_id=1440352198709088306)"
     }
     embed = discord.Embed(title="FAQ <a:mikupat:1441064448235274250>", description="FAQ. something about random.", color=discord.Color.random())
     for question, answer in faq_questions.items():
