@@ -19,7 +19,7 @@ import asyncio
 # -------------------
 load_dotenv()
 
-UNDER_MAINTENANCE = True  # True -> only for devs
+UNDER_MAINTENANCE = False  # True -> only for devs
 cachekill = False        # True -> init global cache
 
 TOKEN = os.getenv("TOKEN")
