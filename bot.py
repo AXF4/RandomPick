@@ -554,27 +554,21 @@ async def tag_autocomplete(
     tokens = current.replace(",", " ").split()
     target_token = tokens[-1].lower() if tokens else ""
 
+    # 최소 2글자 이상 입력 시 검색
     if len(target_token) < 2:
         return []
 
     choices = []
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
     url = f"https://safebooru.org/autocomplete.php?q={urllib.parse.quote(target_token)}"
 
     try:
-        async with aiohttp.ClientSession(DEFAULT_HEADERS) as session:
-            async with safe_get(session, url, headers=headers, timeout=aiohttp.ClientTimeout(total=2.0)) as resp:
+        async with aiohttp.ClientSession(headers=DEFAULT_HEADERS) as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=1.8)) as resp:
                 if resp.status == 200:
                     data = await resp.json(content_type=None)
                     if data and isinstance(data, list):
                         for item in data[:10]:
-                            if isinstance(item, dict):
-                                raw_value = str(item.get("value", ""))
-                            else:
-                                raw_value = str(item)
-
+                            raw_value = str(item.get("value", "")) if isinstance(item, dict) else str(item)
                             clean_tag = re.sub(r'\s*\(\d+\)$', '', raw_value).strip()
 
                             if len(tokens) > 1:
@@ -589,11 +583,11 @@ async def tag_autocomplete(
                                     value=final_val[:100]
                                 )
                             )
-    except Exception:
+    except Exception as e:
+        print(f"[Autocomplete Error] {e}")
         return []
 
     return choices
-
 # -------------------
 # commands & events
 # -------------------
