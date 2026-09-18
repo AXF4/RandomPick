@@ -477,6 +477,8 @@ async def find_tag_hint(session: aiohttp.ClientSession, original_tag: str) -> st
 
 async def fetch_safebooru_image(tag_query: str, user: discord.User | discord.Member = None):
     count_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&tags={urllib.parse.quote(tag_query)}&limit=1"
+    
+    # headers= 키워드를 정확히 붙여서 세션 생성
     async with aiohttp.ClientSession(headers=DEFAULT_HEADERS) as session:
         async with safe_get(session, count_url) as resp:
             if resp.status != 200:
@@ -526,14 +528,9 @@ async def fetch_safebooru_image(tag_query: str, user: discord.User | discord.Mem
         return "⚠️ Invalid image data", None, None
 
     image_url = f"https://safebooru.org/images/{directory}/{image}"
-    embed = discord.Embed(
-        title="🎨 Random Image!", 
-        description=f"Tag: {tag_query or 'None'}", 
-        color=discord.Color.random()
-    )
+    embed = discord.Embed(title="🎨 Random Image!", description=f"Tag: {tag_query or 'None'}", color=discord.Color.random())
     embed.set_image(url=image_url)
 
-    # U R the MONSTER!
     hidden_id_str = hide_user_id(user.id) if user else ""
     requester_text = f"Requested by {user.name}{hidden_id_str} | " if user else ""
     embed.set_footer(text=f"{requester_text}ID: {post_id}")
