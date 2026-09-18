@@ -50,9 +50,14 @@ def safe_get(session: aiohttp.ClientSession, url: str, **kwargs):
             global last_request_time
             async with request_lock:
                 elapsed = time.time() - last_request_time
-                if elapsed < 0.5:
-                    await asyncio.sleep(0.5 - elapsed)
+                if elapsed < 0.6:  # 0.5초 -> 0.6초로 여유 확보
+                    await asyncio.sleep(0.6 - elapsed)
                 last_request_time = time.time()
+
+            # 헤더가 따로 안 넘어왔다면 DEFAULT_HEADERS 강제 적용
+            if "headers" not in kwargs:
+                kwargs["headers"] = DEFAULT_HEADERS
+
             self.resp = await session.get(url, **kwargs)
             return self.resp
 
@@ -62,8 +67,17 @@ def safe_get(session: aiohttp.ClientSession, url: str, **kwargs):
     return SafeRequestContext()
 
 DEFAULT_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "*/*",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Sec-Ch-Ua": '"Chromium";v="128", "Not;A=Brand";v="24", "Google Chrome";v="128"',
+    "Sec-Ch-Ua-Mobile": "?0",
+    "Sec-Ch-Ua-Platform": '"Windows"',
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1",
     "Referer": "https://safebooru.org/",
 }
 
