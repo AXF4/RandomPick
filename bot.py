@@ -19,7 +19,7 @@ import asyncio
 # -------------------
 load_dotenv()
 
-UNDER_MAINTENANCE = False  # True -> only for devs
+UNDER_MAINTENANCE = True  # True -> only for devs
 cachekill = False        # True -> init global cache
 
 TOKEN = os.getenv("TOKEN")
@@ -60,6 +60,12 @@ def safe_get(session: aiohttp.ClientSession, url: str, **kwargs):
             await self.resp.__aexit__(exc_type, exc_val, exc_tb)
 
     return SafeRequestContext()
+
+DEFAULT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+}
 
 BOOT_TIME_STR = datetime.now().strftime("%Y%m%d_%H%M%S")
 LOG_FILENAME = f"{BOOT_TIME_STR}.log"
@@ -211,7 +217,7 @@ class PicDetailView(discord.ui.View):
         post_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&id={post_id}&json=1"
         comment_url = f"https://safebooru.org/index.php?page=dapi&s=comment&q=index&post_id={post_id}"
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(DEFAULT_HEADERS) as session:
             async with safe_get(session, post_url) as resp:
                 if resp.status != 200:
                     await interaction.followup.send("⚠️ Could not load data", ephemeral=True)
@@ -471,7 +477,7 @@ async def find_tag_hint(session: aiohttp.ClientSession, original_tag: str) -> st
 
 async def fetch_safebooru_image(tag_query: str, user: discord.User | discord.Member = None):
     count_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&tags={urllib.parse.quote(tag_query)}&limit=1"
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(DEFAULT_HEADERS) as session:
         async with safe_get(session, count_url) as resp:
             if resp.status != 200:
                 return "⚠️ Failed to get count", None, None
@@ -558,7 +564,7 @@ async def tag_autocomplete(
     url = f"https://safebooru.org/autocomplete.php?q={urllib.parse.quote(target_token)}"
 
     try:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(DEFAULT_HEADERS) as session:
             async with safe_get(session, url, headers=headers, timeout=aiohttp.ClientTimeout(total=2.0)) as resp:
                 if resp.status == 200:
                     data = await resp.json(content_type=None)
