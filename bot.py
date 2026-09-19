@@ -688,7 +688,6 @@ async def faq(interaction: discord.Interaction):
         "What emojis are included in randomemoji?": "Only custom emojis from servers where the bot is present.",
         "Where do you get the images from?": "Safebooru. You can check the tags there.",
         "Who made this?": "AXF4",
-        "What is the current version?": "v3.0.4",
         "How can I invite the bot?": "[👉 Click here to invite the bot!](https://discord.com/oauth2/authorize?client_id=1440352198709088306&permissions=4503739214129152&integration_type=0&scope=bot)",
         "Can I use this on my personal account?": "[👉 Click here to add to your account!](https://discord.com/oauth2/authorize?client_id=1440352198709088306)"
     }
