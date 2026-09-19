@@ -208,7 +208,8 @@ class PicDetailView(discord.ui.View):
         if interaction.message.embeds:
             desc = interaction.message.embeds[0].description or ""
             if desc.startswith("Tag: "):
-                tag_query = desc.replace("Tag: ", "").strip()
+                raw_tag = desc.replace("Tag: ", "").strip()
+                tag_query = re.sub(r"\\([\\`*_{}\[\]()#+\-.!|~])", r"\1", raw_tag)
                 if tag_query == "None":
                     tag_query = ""
 
@@ -514,17 +515,31 @@ async def fetch_safebooru_image(tag_query: str, user: discord.User | discord.Mem
     if not data:
         return "⚠️ No images found in this range", None, None
 
-    pic = random.choice(data)
+    valid_pics = [
+        p for p in data 
+        if p.get("image") and not p.get("image").lower().endswith(('.mp4', '.webm', '.zip'))
+    ]
+
+    if not valid_pics:
+        return "⚠️ No valid images found in this range", None, None
+
+    pic = random.choice(valid_pics)
     directory = pic.get("directory")
     image = pic.get("image")
     post_id = pic.get("id")
     source_url = pic.get("source", "").strip()
 
-    if not directory or not image:
-        return "⚠️ Invalid image data", None, None
+    no_comma_tag = tag_query.replace(","," ")
+
+    clean_tag = (
+        discord.utils.escape_markdown(no_comma_tag) if no_comma_tag else "None"
+    )
 
     image_url = f"https://safebooru.org/images/{directory}/{image}"
-    embed = discord.Embed(title="🎨 Random Image!", description=f"Tag: {tag_query or 'None'}", color=discord.Color.random())
+    
+    image_url = urllib.parse.quote(image_url, safe=":/")
+
+    embed = discord.Embed(title="🎨 Random Image!", description=f"Tag: {clean_tag or 'None'}", color=discord.Color.random())
     embed.set_image(url=image_url)
 
     hidden_id_str = hide_user_id(user.id) if user else ""
