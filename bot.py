@@ -769,7 +769,7 @@ async def setting(interaction: discord.Interaction):
     async with aiosqlite.connect(DB_NAME) as db:
         async with db.execute("SELECT AllowAI FROM setting WHERE UserID = ?", (user_id_str,)) as cursor:
             row = await cursor.fetchone()
-            current_val = row[0] if row else 1
+            current_val = row[0] if row else 0
 
     try:
         view = SettingsPanelView(user_id_str, current_val)
