@@ -20,7 +20,7 @@ import asyncio
 load_dotenv()
 
 UNDER_MAINTENANCE = False  # True -> maintenance
-cachekill = False          # True -> init global cache 
+cachekill = False        # True -> init global cache 
 
 TOKEN = os.getenv("TOKEN")
 GIPHY = os.getenv("GIPHY")
@@ -607,6 +607,9 @@ async def on_ready():
     print(f"Logged in as {bot.user}!")
     print(f"[DEBUG] 현재 점검 모드: {UNDER_MAINTENANCE}")
     print(f"[DEBUG] 등록된 관리자 ID 목록: {DEV_IDS}")
+    print("현재 봇이 설치된 서버 목록:")
+    for guild in bot.guilds:
+        print(f"- 서버 이름: {guild.name} (ID: {guild.id}) / 멤버 수: {guild.member_count}명")
     now = datetime.now()
     activity = discord.CustomActivity(name=f"Last Boot: {now.strftime('%Y-%m-%d %H:%M:%S')} (UTC+9)")
     await bot.change_presence(status=discord.Status.online, activity=activity)
@@ -689,7 +692,8 @@ async def faq(interaction: discord.Interaction):
         "Where do you get the images from?": "Safebooru. You can check the tags there.",
         "Who made this?": "AXF4",
         "How can I invite the bot?": "[👉 Click here to invite the bot!](https://discord.com/oauth2/authorize?client_id=1440352198709088306&permissions=4503739214129152&integration_type=0&scope=bot)",
-        "Can I use this on my personal account?": "[👉 Click here to add to your account!](https://discord.com/oauth2/authorize?client_id=1440352198709088306)"
+        "Can I use this on my personal account?": "[👉 Click here to add to your account!](https://discord.com/oauth2/authorize?client_id=1440352198709088306)",
+        "Community Server": "[👉 Click Here!](https://discord.gg/HTDVkbWM3u)"
     }
     embed = discord.Embed(title="FAQ <a:mikupat:1441064448235274250>", description="FAQ. something about random.", color=discord.Color.random())
     for question, answer in faq_questions.items():
