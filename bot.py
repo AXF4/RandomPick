@@ -538,9 +538,9 @@ async def fetch_safebooru_image(tag_query: str, user: discord.User | discord.Mem
     effective_tag_query = tag_query
     if allow_ai == 0:
         if effective_tag_query:
-            effective_tag_query += " -ai-generated -ai_generated"
+            effective_tag_query += " -ai-generated -ai_generated -rating:questionable"
         else:
-            effective_tag_query = "-ai-generated -ai_generated"
+            effective_tag_query = "-ai-generated -ai_generated -rating:questionable"
 
     count_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&tags={urllib.parse.quote(effective_tag_query)}&limit=1"
     
