@@ -40,7 +40,7 @@ async def init_db():
         await db.execute("""
             CREATE TABLE IF NOT EXISTS "setting" (
                 "UserID" TEXT NOT NULL,
-                "AllowAI" INTEGER NOT NULL DEFAULT 1,
+                "AllowAI" INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY("UserID")
             )
         """)
@@ -527,7 +527,7 @@ async def find_tag_hint(session: aiohttp.ClientSession, original_tag: str) -> st
     return ""
 
 async def fetch_safebooru_image(tag_query: str, user: discord.User | discord.Member = None):
-    allow_ai = 1
+    allow_ai = 0
     if user:
         async with aiosqlite.connect(DB_NAME) as db:
             async with db.execute("SELECT AllowAI FROM setting WHERE UserID = ?", (str(user.id),)) as cursor:
