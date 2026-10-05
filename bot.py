@@ -13,6 +13,7 @@ import re
 import urllib.parse
 from datetime import datetime
 import asyncio
+import aiosqlite  
 
 # -------------------
 # 1. setting n .env
@@ -30,6 +31,20 @@ DEV_IDS = {int(uid.strip()) for uid in raw_dev_ids.split(".") if uid.strip().isd
 
 GIPHY_SEARCH_URL = "https://api.giphy.com/v1/gifs/search"
 GIPHY_RANDOM_URL = "https://api.giphy.com/v1/gifs/random"
+
+DB_NAME = "settings.db"
+
+async def init_db():
+    """봇 시작 시 비동기로 DB 테이블 생성"""
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS "setting" (
+                "UserID" TEXT NOT NULL,
+                "AllowAI" INTEGER NOT NULL DEFAULT 1,
+                PRIMARY KEY("UserID")
+            )
+        """)
+        await db.commit()
 
 def wait_for_internet():
     while True:
@@ -146,6 +161,41 @@ def resolve_source_url(source: str) -> str:
         return clean_and_validate_url(found_url)
     return ""
 
+class SettingsPanelView(discord.ui.View):
+    def __init__(self, user_id: str, allow_ai: int):
+        super().__init__(timeout=180)
+        self.user_id = user_id
+        self.allow_ai = allow_ai
+        self.update_buttons()
+
+    def update_buttons(self):
+        self.clear_items()
+        
+        # AI allow/disallow toggle button
+        ai_label = "AI Illustration: Allow" if self.allow_ai == 1 else "AI Illustration: Disallow"
+        ai_style = discord.ButtonStyle.success if self.allow_ai == 1 else discord.ButtonStyle.danger
+        
+        ai_button = discord.ui.Button(label=ai_label, style=ai_style, custom_id="setting:toggle_ai")
+        ai_button.callback = self.toggle_ai_callback
+        self.add_item(ai_button)
+
+    async def toggle_ai_callback(self, interaction: discord.Interaction):
+        self.allow_ai = 0 if self.allow_ai == 1 else 1
+        
+        async with aiosqlite.connect(DB_NAME) as db:
+            await db.execute("""
+                INSERT INTO setting (UserID, AllowAI) VALUES (?, ?)
+                ON CONFLICT(UserID) DO UPDATE SET AllowAI = ?
+            """, (self.user_id, self.allow_ai, self.allow_ai))
+            await db.commit()
+
+        self.update_buttons()
+        status_text = "Allow" if self.allow_ai == 1 else "Disallow"
+        await interaction.response.edit_message(
+            content=f"⚙️ Your setting saved successfully!\n• **AI Illustration**: `{status_text}`",
+            view=self
+        )
+
 class PicDetailView(discord.ui.View):
     user_cooldowns: dict[int, float] = {}
 
@@ -248,7 +298,7 @@ class PicDetailView(discord.ui.View):
                 post_data = await resp.json()
 
             if not post_data:
-                await interaction.followup.send("⚠️ Could not find the source", ephemeral=True)
+                await interaction.followup.send("⚠ Could not find the source", ephemeral=True)
                 return
 
             post = post_data[0]
@@ -430,6 +480,7 @@ class RandomPickBot(commands.Bot):
 
     async def setup_hook(self):
         self.add_view(PicDetailView())
+        await init_db()  # 봇 시작 시 비동기 DB 초기화 실행
 
 bot = RandomPickBot()
 
@@ -471,12 +522,27 @@ async def find_tag_hint(session: aiohttp.ClientSession, original_tag: str) -> st
                     if name and count > 0 and name.lower() != target_tag:
                         return name
     except Exception as e:
-        print(f"[Hint Debug 2] Tag DAPI 실패: {e}")
+        print(f"[Hint Debug 2] Failed Tag DAPI: {e}")
 
     return ""
 
 async def fetch_safebooru_image(tag_query: str, user: discord.User | discord.Member = None):
-    count_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&tags={urllib.parse.quote(tag_query)}&limit=1"
+    allow_ai = 1
+    if user:
+        async with aiosqlite.connect(DB_NAME) as db:
+            async with db.execute("SELECT AllowAI FROM setting WHERE UserID = ?", (str(user.id),)) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    allow_ai = row[0]
+
+    effective_tag_query = tag_query
+    if allow_ai == 0:
+        if effective_tag_query:
+            effective_tag_query += " -ai-generated -ai_generated"
+        else:
+            effective_tag_query = "-ai-generated -ai_generated"
+
+    count_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&tags={urllib.parse.quote(effective_tag_query)}&limit=1"
     
     async with aiohttp.ClientSession(headers=DEFAULT_HEADERS) as session:
         async with safe_get(session, count_url) as resp:
@@ -490,8 +556,6 @@ async def fetch_safebooru_image(tag_query: str, user: discord.User | discord.Mem
         except Exception:
             return "⚠️ Failed to parse XML count", None, None
 
-        tag_count = len([t for t in tag_query.split(" ") if t]) if tag_query else 0
-
         if total_count == 0:
             hint = await find_tag_hint(session, tag_query)
             if hint:
@@ -503,10 +567,10 @@ async def fetch_safebooru_image(tag_query: str, user: discord.User | discord.Mem
         max_offset = max(total_count - limit, 0)
         offset = random.randint(0, max_offset)
 
-        json_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit={limit}&offset={offset}&tags={urllib.parse.quote(tag_query)}"
+        json_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit={limit}&offset={offset}&tags={urllib.parse.quote(effective_tag_query)}"
         async with safe_get(session, json_url) as resp:
             if resp.status != 200:
-                return "⚠️ Failed to load JSON", None, None
+                return "⚠ Failed to load JSON", None, None
             text = await resp.text()
             if not text.strip().startswith("["):
                 return "⚠️ Server returned invalid JSON", None, None
@@ -530,13 +594,11 @@ async def fetch_safebooru_image(tag_query: str, user: discord.User | discord.Mem
     source_url = pic.get("source", "").strip()
 
     no_comma_tag = tag_query.replace(","," ")
-
     clean_tag = (
         discord.utils.escape_markdown(no_comma_tag) if no_comma_tag else "None"
     )
 
     image_url = f"https://safebooru.org/images/{directory}/{image}"
-    
     image_url = urllib.parse.quote(image_url, safe=":/")
 
     embed = discord.Embed(title="🎨 Random Image!", description=f"Tag: {clean_tag or 'None'}", color=discord.Color.random())
@@ -680,7 +742,7 @@ async def randomemoji(interaction: discord.Interaction, emoji_type: str = None):
         all_emojis = [e for e in all_emojis if not e.animated]
 
     if not all_emojis:
-        await interaction.followup.send(f"⚠️ No emojis found for type '{t}'")
+        await interaction.followup.send(f"⚠ No emojis found for type '{t}'")
         return
 
     await interaction.followup.send(str(random.choice(all_emojis)))
@@ -699,6 +761,27 @@ async def faq(interaction: discord.Interaction):
     for question, answer in faq_questions.items():
         embed.add_field(name=f"Q. {question}", value=f"A. {answer}", inline=False)
     await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="setting", description="Change the bot settings")
+async def setting(interaction: discord.Interaction):
+    user_id_str = str(interaction.user.id)
+
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute("SELECT AllowAI FROM setting WHERE UserID = ?", (user_id_str,)) as cursor:
+            row = await cursor.fetchone()
+            current_val = row[0] if row else 1
+
+    try:
+        view = SettingsPanelView(user_id_str, current_val)
+        await interaction.response.send_message(
+            content="⚙️ Please configure your **AI illustration settings.**", 
+            view=view, 
+            ephemeral=True
+        )
+    except Exception as e:
+        print(f"[Setting Error] {e}")
+        if not interaction.response.is_done():
+            await interaction.response.send_message("⚠️ An error occurred while opening the settings.", ephemeral=True)
 
 wait_for_internet()
 bot.run(TOKEN)
