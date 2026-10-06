@@ -30,12 +30,21 @@
 * Check out the detailed version history in the [Changelog](https://github.com/AXF4/RandomPick/blob/main/Changelog.md).
 
 # 6. Getting Start
-1. clone repository ```bash
-git clone https://github.com/AXF4/RandomPick.git```
-2. Install Dependencies ```bash
-pip install -r requirements.txt```
-3. Set up environment variables `(.env)` ```
-TOKEN=YOUR_TOKEN_HERE```
-4. Run the Bot ```bash
-python bot.py```
+1. clone repository
+```bash
+git clone https://github.com/AXF4/RandomPick.git
+```
+3. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+4. Set up environment variables `(.env)`
+```
+TOKEN=YOUR_TOKEN_HERE
+DEVID=YOUR_DISCORD_USER_ID_HERE
+```
+5. Run the Bot
+```bash
+python bot.py
+```
 * **Database Note:** The `settings.db` file is ignored by Git for security and will be automatically created upon the first run of the bot.
