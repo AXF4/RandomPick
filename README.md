@@ -34,16 +34,16 @@
 ```bash
 git clone https://github.com/AXF4/RandomPick.git
 ```
-3. Install Dependencies
+2. Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
-4. Set up environment variables `(.env)`
+3. Set up environment variables `(.env)`
 ```
 TOKEN=YOUR_TOKEN_HERE
 DEVID=YOUR_DISCORD_USER_ID_HERE
 ```
-5. Run the Bot
+4. Run the Bot
 ```bash
 python bot.py
 ```
