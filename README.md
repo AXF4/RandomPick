@@ -1,3 +1,15 @@
+<div align="center">
+
+# Randompick
+
+**A feature-rich Discord bot designed to search, bookmark, and manage random images seamlessly using custom tags.**
+
+[![Python](https://img.shields.io/badge/Python-3.x-blue.svg)](https://www.python.org/)
+[![Discord.py](https://img.shields.io/badge/Discord.py-API-5865F2.svg)](https://discord.com/)
+[![SQLite](https://img.shields.io/badge/Database-SQLite-003B57.svg)](https://www.sqlite.org/)
+
+</div>
+
 # 1. Overview
 * **Project Name:** Randompick
 * **Description:** A feature-rich Discord bot designed to search, bookmark, and manage random images seamlessly using custom tags.
@@ -29,7 +41,7 @@
 # 5. Update Log
 * Check out the detailed version history in the [Changelog](https://github.com/AXF4/RandomPick/blob/main/Changelog.md).
 
-# 6. Getting Start
+# 6. Getting Started
 1. clone repository
 ```bash
 git clone https://github.com/AXF4/RandomPick.git
