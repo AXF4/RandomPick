@@ -19,8 +19,6 @@
 * **User Settings:** Allows users to configure preferences such as AI illustration display settings via the `setting` command.
 
 # 4. Troubleshooting
-*(Example: Based on your update log, you can write about security or state persistence)*
-
 * **Securing API Keys and Sensitive Data (v1.5.2)**
   * **Issue:** Risk of hardcoded API keys or sensitive credentials being exposed in the repository.
   * **Solution:** Refactored configuration handling to load environment variables securely using `.env` files, preventing accidental exposure in source control.
