@@ -1,5 +1,7 @@
 # RandomPick Bot Update Log
 
+## Latest Version: v2.3.2
+
 ## v0.1.0
 
 * Added `picknumber`, `pickfloat`, `testpercent`, and `dice`
