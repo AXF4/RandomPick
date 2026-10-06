@@ -5,7 +5,7 @@
   <p align="center">
     <img width="700" alt="Randompic feature screenshot 1" src="https://github.com/user-attachments/assets/60e242e6-37e3-4b60-a861-91f783875881" />
     <br>
-    <img width="700" alt="Randompic feature screenshot 2" src="https://github.com/user-attachments/assets/45766c9-844c-4194-a97e-77e9777c4550" />
+    <img width="700" alt="Randompic feature screenshot 2" src="https://github.com/user-attachments/assets/b45766c9-844c-4194-a97e-77e9777c4550" />
   </p>
 
 # 2. Tech Stack
