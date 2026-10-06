@@ -12,4 +12,4 @@
 # 4. TroubleShooting
 * (Add some cool messages here)
 # 5. Update Log
-* Click Here!
+* [Click Here!](https://github.com/AXF4/RandomPick/blob/main/Changelog.md)
