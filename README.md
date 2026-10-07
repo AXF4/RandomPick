@@ -37,6 +37,9 @@
 * **Preserving Button State After Bot Restarts (v1.9.0)**
   * **Issue:** Interactive UI buttons (`info`, `onemore`) became unresponsive when the bot restarted.
   * **Solution:** Restructured how persistent view states and message identifiers are tracked, ensuring component callbacks remain functional even after service restarts.
+* **403 Forbidden During Autocomplete feature (v2.0.0)**
+  * **Issue:** Autocomplete feature can cause 403 Forbidden Error because of a lot of requests.
+  * **Solution:** Made Global and Individual Cooldown
 
 # 5. Update Log
 * Check out the detailed version history in the [Changelog](https://github.com/AXF4/RandomPick/blob/main/Changelog.md).
