@@ -35,15 +35,19 @@ GIPHY_RANDOM_URL = "https://api.giphy.com/v1/gifs/random"
 DB_NAME = "settings.db"
 
 async def init_db():
-    """봇 시작 시 비동기로 DB 테이블 생성"""
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute("""
             CREATE TABLE IF NOT EXISTS "setting" (
                 "UserID" TEXT NOT NULL,
                 "AllowAI" INTEGER NOT NULL DEFAULT 0,
+                "Language" TEXT NOT NULL DEFAULT 'en',
                 PRIMARY KEY("UserID")
             )
         """)
+        try:
+            await db.execute("ALTER TABLE setting ADD COLUMN Language TEXT NOT NULL DEFAULT 'en'")
+        except Exception:
+            pass
         await db.commit()
 
 def wait_for_internet():
@@ -55,6 +59,47 @@ def wait_for_internet():
         except OSError:
             print("Internet connection failed... retry in 5 seconds...")
             time.sleep(5)
+
+# -------------------
+# Localization (i18n) Setting
+# -------------------
+LOCALES = {}
+
+def load_locales():
+    locales_dir = "locales"
+    if not os.path.exists(locales_dir):
+        os.makedirs(locales_dir)
+        
+    for filename in os.listdir(locales_dir):
+        if filename.endswith(".json"):
+            lang_code = filename[:-5]  # 예: "en.json" -> "en"
+            filepath = os.path.join(locales_dir, filename)
+            try:
+                with open(filepath, "r", encoding="utf-8") as f:
+                    LOCALES[lang_code] = json.load(f)
+                print(f"[Localization] Loaded language file: {filename}")
+            except Exception as e:
+                print(f"[Localization Error] Failed to load {filename}: {e}")
+
+async def get_user_lang(user_id: int) -> str:
+    """유저의 언어 설정 가져오기 (기본값: en)"""
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute("SELECT Language FROM setting WHERE UserID = ?", (str(user_id),)) as cursor:
+            row = await cursor.fetchone()
+            if row and row[0]:
+                return row[0]
+    return "en"
+
+def t(lang: str, key: str, **kwargs) -> str:
+    """번역 텍스트를 가져오고 f-string 포맷팅을 적용하는 헬퍼 함수"""
+    lang_data = LOCALES.get(lang, LOCALES.get("en", {}))
+    text = lang_data.get(key, LOCALES.get("en", {}).get(key, key))
+    if kwargs:
+        try:
+            return text.format(**kwargs)
+        except Exception:
+            return text
+    return text
 
 request_lock = asyncio.Lock()
 last_request_time = 0.0
@@ -77,7 +122,6 @@ def safe_get(session: aiohttp.ClientSession, url: str, **kwargs):
 
     return SafeRequestContext()
 
-# header
 DEFAULT_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Accept": "*/*",
@@ -87,8 +131,12 @@ DEFAULT_HEADERS = {
 # -------------------
 # utility
 # -------------------
+LOGS_DIR = "logs"
+if not os.path.exists(LOGS_DIR):
+    os.makedirs(LOGS_DIR)
+
 BOOT_TIME_STR = datetime.now().strftime("%Y%m%d_%H%M%S")
-LOG_FILENAME = f"{BOOT_TIME_STR}.log"
+LOG_FILENAME = os.path.join(LOGS_DIR, f"{BOOT_TIME_STR}.log")
 
 def write_stat_log(user: discord.User | discord.Member, action_name: str):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -99,7 +147,6 @@ def write_stat_log(user: discord.User | discord.Member, action_name: str):
     except Exception as e:
         print(f"[Logging Error] {e}")
 
-# 영폭 문자(Zero-Width Character): \u200b (0), \u200c (1)
 ZW_0 = "\u200b"
 ZW_1 = "\u200c"
 
@@ -118,7 +165,7 @@ def extract_hidden_user_id(text: str) -> int | None:
         return None
 
 # -------------------
-# 3. UI 및 뷰 클래스
+# 3. UI / View
 # -------------------
 intents = discord.Intents.default()
 
@@ -162,17 +209,18 @@ def resolve_source_url(source: str) -> str:
     return ""
 
 class SettingsPanelView(discord.ui.View):
-    def __init__(self, user_id: str, allow_ai: int):
+    def __init__(self, user_id: str, allow_ai: int, lang: str):
         super().__init__(timeout=180)
         self.user_id = user_id
         self.allow_ai = allow_ai
+        self.lang = lang
         self.update_buttons()
 
     def update_buttons(self):
         self.clear_items()
         
-        # AI allow/disallow toggle button
-        ai_label = "AI Illustration: Allow" if self.allow_ai == 1 else "AI Illustration: Disallow"
+        ai_label_key = "AI_ALLOW" if self.allow_ai == 1 else "AI_DISALLOW"
+        ai_label = t(self.lang, ai_label_key)
         ai_style = discord.ButtonStyle.success if self.allow_ai == 1 else discord.ButtonStyle.danger
         
         ai_button = discord.ui.Button(label=ai_label, style=ai_style, custom_id="setting:toggle_ai")
@@ -190,42 +238,51 @@ class SettingsPanelView(discord.ui.View):
             await db.commit()
 
         self.update_buttons()
-        status_text = "Allow" if self.allow_ai == 1 else "Disallow"
+        status_key = "AI_STATUS_ALLOW" if self.allow_ai == 1 else "AI_STATUS_DISALLOW"
+        status_text = t(self.lang, status_key)
         await interaction.response.edit_message(
-            content=f"⚙️ Your setting saved successfully!\n• **AI Illustration**: `{status_text}`",
+            content=t(self.lang, "SETTING_SAVED", status=status_text),
             view=self
         )
 
 class PicDetailView(discord.ui.View):
     user_cooldowns: dict[int, float] = {}
 
-    def __init__(self, post_id: int = None, source_url: str = None):
+    def __init__(self, post_id: int = None, source_url: str = None, lang: str = "en"):
         super().__init__(timeout=None)
+        self.lang = lang
+        
         if post_id:
             safebooru_url = f"https://safebooru.org/index.php?page=post&s=view&id={post_id}"
-            self.add_item(discord.ui.Button(label="View", url=safebooru_url, row=1))
+            self.add_item(discord.ui.Button(label=t(lang, "BTN_VIEW"), url=safebooru_url, row=1))
             
             resolved_source = resolve_source_url(source_url)
             if resolved_source:
                 try:
-                    self.add_item(discord.ui.Button(label="Source", url=resolved_source, row=1))
+                    self.add_item(discord.ui.Button(label=t(lang, "BTN_SOURCE"), url=resolved_source, row=1))
                 except Exception:
                     pass
             else:
-                self.add_item(discord.ui.Button(label="Source", style=discord.ButtonStyle.secondary, disabled=True, emoji="🚫", row=1))
+                self.add_item(discord.ui.Button(label=t(lang, "BTN_SOURCE"), style=discord.ButtonStyle.secondary, disabled=True, emoji="🚫", row=1))
+
+        # OneMore 및 Info 버튼 라벨 다국어 적용
+        for item in self.children:
+            if isinstance(item, discord.ui.Button):
+                if item.custom_id == "safebooru:onemore_v2":
+                    item.label = t(lang, "BTN_ONE_MORE")
+                elif item.custom_id == "safebooru:info_v2":
+                    item.label = t(lang, "BTN_INFO")
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        user_lang = await get_user_lang(interaction.user.id)
+        self.lang = user_lang
+
         if UNDER_MAINTENANCE and interaction.user.id not in DEV_IDS:
+            msg = t(user_lang, "MAINTENANCE")
             if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    "Sorry, the service is under maintenance.",
-                    ephemeral=True
-                )
+                await interaction.response.send_message(msg, ephemeral=True)
             else:
-                await interaction.followup.send(
-                    "Sorry, the service is under maintenance.",
-                    ephemeral=True
-                )
+                await interaction.followup.send(msg, ephemeral=True)
             return False
 
         now = time.time()
@@ -235,16 +292,11 @@ class PicDetailView(discord.ui.View):
 
         if elapsed < cooldown_time:
             retry_after = cooldown_time - elapsed
+            msg = t(user_lang, "TOO_FAST", retry_after=retry_after)
             if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    f"⏳ Too Fast! Try again in **{retry_after:.1f}** second.",
-                    ephemeral=True
-                )
+                await interaction.response.send_message(msg, ephemeral=True)
             else:
-                await interaction.followup.send(
-                    f"⏳ Too Fast! Try again in **{retry_after:.1f}** second.",
-                    ephemeral=True
-                )
+                await interaction.followup.send(msg, ephemeral=True)
             return False
 
         self.user_cooldowns[interaction.user.id] = now
@@ -257,10 +309,12 @@ class PicDetailView(discord.ui.View):
         tag_query = ""
         if interaction.message.embeds:
             desc = interaction.message.embeds[0].description or ""
-            if desc.startswith("Tag: "):
-                raw_tag = desc.replace("Tag: ", "").strip()
+            if ":" in desc:
+                raw_tag = desc.split(":", 1)[1].strip()
                 tag_query = re.sub(r"\\([\\`*_{}\[\]()#+\-.!|~])", r"\1", raw_tag)
-                if tag_query == "None":
+                
+                is_none = any(tag_query == lang_data.get("IMG_NONE") for lang_data in LOCALES.values())
+                if is_none:
                     tag_query = ""
 
         err_msg, new_embed, new_view = await fetch_safebooru_image(tag_query, user=interaction.user)
@@ -272,6 +326,7 @@ class PicDetailView(discord.ui.View):
 
     @discord.ui.button(label="Info", style=discord.ButtonStyle.primary, custom_id="safebooru:info_v2", row=0)
     async def info_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user_lang = await get_user_lang(interaction.user.id)
         write_stat_log(interaction.user, "Button: Info")
         await interaction.response.defer(ephemeral=True)
         embed = interaction.message.embeds[0] if interaction.message.embeds else None
@@ -284,7 +339,7 @@ class PicDetailView(discord.ui.View):
                 post_id = raw_id
 
         if not post_id:
-            await interaction.followup.send("⚠️ Cannot identify Image", ephemeral=True)
+            await interaction.followup.send(t(user_lang, "IMG_CANNOT_IDENTIFY"), ephemeral=True)
             return
 
         post_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&id={post_id}&json=1"
@@ -293,12 +348,12 @@ class PicDetailView(discord.ui.View):
         async with aiohttp.ClientSession(headers=DEFAULT_HEADERS) as session:
             async with safe_get(session, post_url) as resp:
                 if resp.status != 200:
-                    await interaction.followup.send("⚠️ Could not load data", ephemeral=True)
+                    await interaction.followup.send(t(user_lang, "IMG_COULD_NOT_LOAD"), ephemeral=True)
                     return
                 post_data = await resp.json()
 
             if not post_data:
-                await interaction.followup.send("⚠ Could not find the source", ephemeral=True)
+                await interaction.followup.send(t(user_lang, "IMG_COULD_NOT_FIND_SOURCE"), ephemeral=True)
                 return
 
             post = post_data[0]
@@ -326,7 +381,7 @@ class PicDetailView(discord.ui.View):
                 pass
 
             if not characters and raw_tags:
-                fallback_chars = [t for t in raw_tags if "(" in t and ")" in t and not any(t.endswith(ext) for ext in ["_(cosplay)", "_(style)"])]
+                fallback_chars = [t_item for t_item in raw_tags if "(" in t_item and ")" in t_item and not any(t_item.endswith(ext) for ext in ["_(cosplay)", "_(style)"])]
                 if fallback_chars:
                     characters = fallback_chars
 
@@ -336,29 +391,30 @@ class PicDetailView(discord.ui.View):
         rating = rating_map.get(raw_rating, raw_rating.capitalize())
         width = post.get("width", 0)
         height = post.get("height", 0)
-        dimensions = f"{width} × {height}" if width and height else "Unknown"
-        char_text = ", ".join(characters) if characters else "Unknown / None"
-        all_tags = ", ".join(raw_tags) if raw_tags else "None"
+        dimensions = f"{width} × {height}" if width and height else t(user_lang, "IMG_UNKNOWN")
+        char_text = ", ".join(characters) if characters else f"{t(user_lang, 'IMG_UNKNOWN')} / {t(user_lang, 'IMG_NONE')}"
+        all_tags = ", ".join(raw_tags) if raw_tags else t(user_lang, "IMG_NONE")
         if len(all_tags) > 1000:
-            all_tags = all_tags[:1000] + "... (truncated)"
+            all_tags = all_tags[:1000] + t(user_lang, "IMG_TRUNCATED")
 
-        info_embed = discord.Embed(title=f"ℹ️ Post Details — #{post_id}", color=discord.Color.blue())
-        info_embed.add_field(name="🆔 ID", value=str(post_id), inline=True)
-        info_embed.add_field(name="⭐ Score", value=str(score), inline=True)
-        info_embed.add_field(name="🔞 Rating", value=rating, inline=True)
-        info_embed.add_field(name="📐 Dimensions", value=dimensions, inline=True)
-        info_embed.add_field(name="💬 Comments", value=str(comment_count), inline=True)
-        info_embed.add_field(name="👤 Characters", value=f"`{char_text}`", inline=False)
-        info_embed.add_field(name="🏷️ Tags", value=f"```{all_tags}```", inline=False)
+        info_embed = discord.Embed(title=t(user_lang, "IMG_DETAILS_TITLE", post_id=post_id), color=discord.Color.blue())
+        info_embed.add_field(name=t(user_lang, "IMG_ID"), value=str(post_id), inline=True)
+        info_embed.add_field(name=t(user_lang, "IMG_SCORE"), value=str(score), inline=True)
+        info_embed.add_field(name=t(user_lang, "IMG_RATING"), value=rating, inline=True)
+        info_embed.add_field(name=t(user_lang, "IMG_DIMENSIONS"), value=dimensions, inline=True)
+        info_embed.add_field(name=t(user_lang, "IMG_COMMENTS"), value=str(comment_count), inline=True)
+        info_embed.add_field(name=t(user_lang, "IMG_CHARACTERS"), value=f"`{char_text}`", inline=False)
+        info_embed.add_field(name=t(user_lang, "IMG_TAGS"), value=f"```{all_tags}```", inline=False)
 
         await interaction.followup.send(embed=info_embed, ephemeral=True)
 
-    @discord.ui.button(label="Bookmark", emoji="🔖", style=discord.ButtonStyle.secondary, custom_id="safebooru:bookmark_v1", row=0)
+    @discord.ui.button(label="", emoji="🔖", style=discord.ButtonStyle.secondary, custom_id="safebooru:bookmark_v1", row=0)
     async def bookmark_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user_lang = await get_user_lang(interaction.user.id)
         embed = interaction.message.embeds[0] if interaction.message.embeds else None
         
         if not embed:
-            await interaction.response.send_message("⚠️ Could not find an image to save.", ephemeral=True)
+            await interaction.response.send_message(t(user_lang, "BOOKMARK_NOT_FOUND"), ephemeral=True)
             return
 
         try:
@@ -370,25 +426,23 @@ class PicDetailView(discord.ui.View):
                     dm_view.add_item(discord.ui.Button(label=item.label, url=item.url))
 
             await dm_channel.send(
-                content="🔖 **Safebooru Bookmarks**", 
+                content=t(user_lang, "BOOKMARK_TITLE"), 
                 embed=embed, 
                 view=dm_view if dm_view.children else None
             )
 
             write_stat_log(interaction.user, "Button: Bookmark")
-            await interaction.response.send_message("📬 Image sent to your DMs!", ephemeral=True)
+            await interaction.response.send_message(t(user_lang, "BOOKMARK_SENT"), ephemeral=True)
 
         except discord.Forbidden:
-            await interaction.response.send_message(
-                "❌ Unable to send a DM. Please make sure **'Direct Messages'** from server members is enabled in your server privacy settings.",
-                ephemeral=True
-            )
+            await interaction.response.send_message(t(user_lang, "BOOKMARK_DM_ERROR"), ephemeral=True)
         except Exception as e:
             print(f"[Bookmark Error] {e}")
-            await interaction.response.send_message("⚠️ An error occurred while sending the message.", ephemeral=True)
+            await interaction.response.send_message(t(user_lang, "BOOKMARK_ERROR"), ephemeral=True)
 
     @discord.ui.button(emoji="🗑️", style=discord.ButtonStyle.danger, custom_id="safebooru:delete_v1", row=0)
     async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user_lang = await get_user_lang(interaction.user.id)
         embed = interaction.message.embeds[0] if interaction.message.embeds else None
         footer_text = embed.footer.text if (embed and embed.footer) else ""
 
@@ -402,34 +456,35 @@ class PicDetailView(discord.ui.View):
             try:
                 await interaction.message.delete()
             except discord.Forbidden:
-                await interaction.response.send_message(
-                    "⚠️ The bot is not in this server, lacking permission to delete messages.", 
-                    ephemeral=True
-                )
+                await interaction.response.send_message(t(user_lang, "DELETE_NO_PERMISSION"), ephemeral=True)
         else:
-            await interaction.response.send_message(
-                "🚫 Only the user who requested this can remove this!",
-                ephemeral=True
-            )
+            await interaction.response.send_message(t(user_lang, "DELETE_ONLY_REQUESTER"), ephemeral=True)
 
 class TagHintView(discord.ui.View):
-    def __init__(self, suggested_tag: str):
+    def __init__(self, suggested_tag: str, lang: str = "en"):
         super().__init__(timeout=60)
         self.suggested_tag = suggested_tag
+        self.lang = lang
+        self.update_button()
+
+    def update_button(self):
+        for item in self.children:
+            if isinstance(item, discord.ui.Button):
+                item.label = t(self.lang, "BTN_YES")
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        user_lang = await get_user_lang(interaction.user.id)
+        self.lang = user_lang
         if UNDER_MAINTENANCE and interaction.user.id not in DEV_IDS:
-            await interaction.response.send_message(
-                "Sorry, the service is under maintenance.", 
-                ephemeral=True
-            )
+            await interaction.response.send_message(t(user_lang, "MAINTENANCE"), ephemeral=True)
             return False
         return True
 
-    @discord.ui.button(label="YES", style=discord.ButtonStyle.success, emoji="✅")
+    @discord.ui.button(style=discord.ButtonStyle.success, emoji="✅")
     async def yes_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user_lang = await get_user_lang(interaction.user.id)
         button.disabled = True
-        await interaction.response.edit_message(content=f"🔎 Searching for **`{self.suggested_tag}`**...", view=self)
+        await interaction.response.edit_message(content=t(user_lang, "SEARCH_PREFIX", tag=self.suggested_tag), view=self)
 
         err_msg, embed, view = await fetch_safebooru_image(self.suggested_tag, user=interaction.user)
         if err_msg:
@@ -443,6 +498,7 @@ class TagHintView(discord.ui.View):
 # -------------------
 class MaintenanceTree(app_commands.CommandTree):
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        user_lang = await get_user_lang(interaction.user.id)
         if interaction.type == discord.InteractionType.autocomplete:
             return True
 
@@ -452,16 +508,11 @@ class MaintenanceTree(app_commands.CommandTree):
         )
         if interaction.type in valid_types:
             if UNDER_MAINTENANCE and interaction.user.id not in DEV_IDS:
+                msg = t(user_lang, "MAINTENANCE")
                 if not interaction.response.is_done():
-                    await interaction.response.send_message(
-                        "Sorry, the service is under maintenance.",
-                        ephemeral=True
-                    )
+                    await interaction.response.send_message(msg, ephemeral=True)
                 else:
-                    await interaction.followup.send(
-                        "Sorry, the service is under maintenance.",
-                        ephemeral=True
-                    )
+                    await interaction.followup.send(msg, ephemeral=True)
                 return False
             
         if interaction.type == discord.InteractionType.application_command:
@@ -479,8 +530,9 @@ class RandomPickBot(commands.Bot):
         )
 
     async def setup_hook(self):
+        load_locales()
         self.add_view(PicDetailView())
-        await init_db()  # 봇 시작 시 비동기 DB 초기화 실행
+        await init_db()
 
 bot = RandomPickBot()
 
@@ -527,6 +579,8 @@ async def find_tag_hint(session: aiohttp.ClientSession, original_tag: str) -> st
     return ""
 
 async def fetch_safebooru_image(tag_query: str, user: discord.User | discord.Member = None):
+    user_lang = await get_user_lang(user.id) if user else "en"
+    
     allow_ai = 0
     if user:
         async with aiosqlite.connect(DB_NAME) as db:
@@ -547,21 +601,21 @@ async def fetch_safebooru_image(tag_query: str, user: discord.User | discord.Mem
     async with aiohttp.ClientSession(headers=DEFAULT_HEADERS) as session:
         async with safe_get(session, count_url) as resp:
             if resp.status != 200:
-                return "⚠️ Failed to get count", None, None
+                return t(user_lang, "SEARCH_FAILED_COUNT"), None, None
             xml_text = await resp.text()
 
         try:
             root = ET.fromstring(xml_text)
             total_count = int(root.attrib.get("count", 0))
         except Exception:
-            return "⚠️ Failed to parse XML count", None, None
+            return t(user_lang, "SEARCH_FAILED_XML"), None, None
 
         if total_count == 0:
             hint = await find_tag_hint(session, tag_query)
             if hint:
-                hint_view = TagHintView(suggested_tag=hint)
-                return f"⚠️ No results for that tag.\nDid you mean: **`{hint}`**?", None, hint_view
-            return "⚠️ No results for that tag.", None, None
+                hint_view = TagHintView(suggested_tag=hint, lang=user_lang)
+                return t(user_lang, "SEARCH_DID_YOU_MEAN", hint=hint), None, hint_view
+            return t(user_lang, "SEARCH_NO_RESULTS"), None, None
 
         limit = 5000
         max_offset = max(total_count - limit, 0)
@@ -570,14 +624,14 @@ async def fetch_safebooru_image(tag_query: str, user: discord.User | discord.Mem
         json_url = f"https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit={limit}&offset={offset}&tags={urllib.parse.quote(effective_tag_query)}"
         async with safe_get(session, json_url) as resp:
             if resp.status != 200:
-                return "⚠ Failed to load JSON", None, None
+                return t(user_lang, "SEARCH_FAILED_JSON"), None, None
             text = await resp.text()
             if not text.strip().startswith("["):
-                return "⚠️ Server returned invalid JSON", None, None
+                return t(user_lang, "SEARCH_INVALID_JSON"), None, None
             data = json.loads(text)
 
     if not data:
-        return "⚠️ No images found in this range", None, None
+        return t(user_lang, "SEARCH_NO_VALID_IMAGES"), None, None
 
     valid_pics = [
         p for p in data 
@@ -585,7 +639,7 @@ async def fetch_safebooru_image(tag_query: str, user: discord.User | discord.Mem
     ]
 
     if not valid_pics:
-        return "⚠️ No valid images found in this range", None, None
+        return t(user_lang, "SEARCH_NO_VALID_IMAGES"), None, None
 
     pic = random.choice(valid_pics)
     directory = pic.get("directory")
@@ -594,21 +648,31 @@ async def fetch_safebooru_image(tag_query: str, user: discord.User | discord.Mem
     source_url = pic.get("source", "").strip()
 
     no_comma_tag = tag_query.replace(","," ")
+    none_text = t(user_lang, "IMG_NONE")
     clean_tag = (
-        discord.utils.escape_markdown(no_comma_tag) if no_comma_tag else "None"
+        discord.utils.escape_markdown(no_comma_tag) if no_comma_tag else none_text
     )
 
     image_url = f"https://safebooru.org/images/{directory}/{image}"
     image_url = urllib.parse.quote(image_url, safe=":/")
 
-    embed = discord.Embed(title="🎨 Random Image!", description=f"Tag: {clean_tag or 'None'}", color=discord.Color.random())
+    cache_buster = int(time.time())
+    image_url = f"{image_url}?cb={cache_buster}"
+
+    embed = discord.Embed(title=t(user_lang, "RANDOM_TITLE"), description=t(user_lang, "TAG_LABEL", tag=clean_tag), color=discord.Color.random())
     embed.set_image(url=image_url)
 
     hidden_id_str = hide_user_id(user.id) if user else ""
-    requester_text = f"Requested by {user.name}{hidden_id_str} | " if user else ""
+    if user:
+        prefix = t(user_lang, "REQUESTED_BY_PREFIX")
+        divider = t(user_lang, "REQUESTED_BY_DIVIDER")
+        requester_text = f"{prefix}{user.name}{hidden_id_str}{divider}"
+    else:
+        requester_text = ""
+        
     embed.set_footer(text=f"{requester_text}ID: {post_id}")
 
-    view = PicDetailView(post_id=post_id, source_url=source_url)
+    view = PicDetailView(post_id=post_id, source_url=source_url, lang=user_lang)
     return None, embed, view
 
 async def tag_autocomplete(
@@ -693,8 +757,9 @@ async def on_ready():
 
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    user_lang = await get_user_lang(interaction.user.id)
     if isinstance(error, app_commands.CommandOnCooldown):
-        msg = f"⏳ Too Fast! Try again in **{error.retry_after:.1f}** second."
+        msg = t(user_lang, "TOO_FAST", retry_after=error.retry_after)
         if interaction.response.is_done():
             await interaction.followup.send(msg, ephemeral=True)
         else:
@@ -729,42 +794,48 @@ async def randompic(interaction: discord.Interaction, tag: str = None):
 @bot.tree.command(name="randomemoji", description="Pick a random emoji from all bot servers")
 @app_commands.describe(emoji_type="gif/pic")
 async def randomemoji(interaction: discord.Interaction, emoji_type: str = None):
+    user_lang = await get_user_lang(interaction.user.id)
     await interaction.response.defer()
     all_emojis = [e for guild in bot.guilds for e in guild.emojis]
     if not all_emojis:
-        await interaction.followup.send("⚠️ Bot has no custom emojis in any server.")
+        await interaction.followup.send(t(user_lang, "EMOJI_NO_EMOJIS"))
         return
 
-    t = emoji_type.lower() if emoji_type else ""
-    if t == "gif":
+    t_type = emoji_type.lower() if emoji_type else ""
+    if t_type == "gif":
         all_emojis = [e for e in all_emojis if e.animated]
-    elif t == "pic":
+    elif t_type == "pic":
         all_emojis = [e for e in all_emojis if not e.animated]
 
     if not all_emojis:
-        await interaction.followup.send(f"⚠ No emojis found for type '{t}'")
+        await interaction.followup.send(t(user_lang, "EMOJI_NOT_FOUND", type=t_type))
         return
 
     await interaction.followup.send(str(random.choice(all_emojis)))
 
 @bot.tree.command(name="faq", description="Show me FAQ!")
 async def faq(interaction: discord.Interaction):
-    faq_questions = {
-        "What emojis are included in randomemoji?": "Only custom emojis from servers where the bot is present.",
-        "Where do you get the images from?": "Safebooru. You can check the tags there.",
-        "Who made this?": "AXF4",
-        "How can I invite the bot?": "[👉 Click here to invite the bot!](https://discord.com/oauth2/authorize?client_id=1440352198709088306&permissions=4503739214129152&integration_type=0&scope=bot)",
-        "Can I use this on my personal account?": "[👉 Click here to add to your account!](https://discord.com/oauth2/authorize?client_id=1440352198709088306)",
-        "Community Server": "[👉 Click Here!](https://discord.gg/HTDVkbWM3u)"
-    }
-    embed = discord.Embed(title="FAQ <a:mikupat:1441064448235274250>", description="FAQ. something about random.", color=discord.Color.random())
-    for question, answer in faq_questions.items():
-        embed.add_field(name=f"Q. {question}", value=f"A. {answer}", inline=False)
+    user_lang = await get_user_lang(interaction.user.id)
+    embed = discord.Embed(title=t(user_lang, "FAQ_TITLE"), description=t(user_lang, "FAQ_DESC"), color=discord.Color.random())
+    
+    faq_pairs = [
+        ("FAQ_Q1", "FAQ_A1"),
+        ("FAQ_Q2", "FAQ_A2"),
+        ("FAQ_Q3", "FAQ_A3"),
+        ("FAQ_Q4", "FAQ_A4"),
+        ("FAQ_Q5", "FAQ_A5"),
+        ("FAQ_Q6", "FAQ_A6"),
+    ]
+    
+    for q_key, a_key in faq_pairs:
+        embed.add_field(name=f"Q. {t(user_lang, q_key)}", value=f"A. {t(user_lang, a_key)}", inline=False)
+        
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="setting", description="Change the bot settings")
 async def setting(interaction: discord.Interaction):
     user_id_str = str(interaction.user.id)
+    user_lang = await get_user_lang(interaction.user.id)
 
     async with aiosqlite.connect(DB_NAME) as db:
         async with db.execute("SELECT AllowAI FROM setting WHERE UserID = ?", (user_id_str,)) as cursor:
@@ -772,16 +843,35 @@ async def setting(interaction: discord.Interaction):
             current_val = row[0] if row else 0
 
     try:
-        view = SettingsPanelView(user_id_str, current_val)
+        view = SettingsPanelView(user_id_str, current_val, user_lang)
         await interaction.response.send_message(
-            content="⚙️ Please configure your **AI illustration settings.**", 
+            content=t(user_lang, "SETTING_TITLE"), 
             view=view, 
             ephemeral=True
         )
     except Exception as e:
         print(f"[Setting Error] {e}")
         if not interaction.response.is_done():
-            await interaction.response.send_message("⚠️ An error occurred while opening the settings.", ephemeral=True)
+            await interaction.response.send_message(t(user_lang, "SETTING_ERROR"), ephemeral=True)
+
+@bot.tree.command(name="language", description="Change your preferred language")
+@app_commands.describe(lang="Choose your language (en, ko)")
+@app_commands.choices(lang=[
+    app_commands.Choice(name="English", value="en"),
+    app_commands.Choice(name="한국어 (Korean)", value="ko"),
+    app_commands.Choice(name="日本語 (Japanese)", value="ja")
+])
+async def language(interaction: discord.Interaction, lang: str):
+    user_id_str = str(interaction.user.id)
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute("""
+            INSERT INTO setting (UserID, Language) VALUES (?, ?)
+            ON CONFLICT(UserID) DO UPDATE SET Language = ?
+        """, (user_id_str, lang, lang))
+        await db.commit()
+
+    res_msg = t(lang,"LANGUAGE_SET")
+    await interaction.response.send_message(res_msg, ephemeral=True)
 
 wait_for_internet()
 bot.run(TOKEN)
