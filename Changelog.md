@@ -145,3 +145,8 @@
 * Added English, Korean, Japanese Language setting
 * fixed Discord embed image not displaying issue (uncertain)
 * write logs in log directory (only for devs)
+
+## v2.5.0
+
+* Meow
+* Nyan
