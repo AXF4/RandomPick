@@ -1,6 +1,6 @@
 # RandomPick Bot Update Log
 
-## Latest Version: v2.4.0
+## Latest Version: v2.5.0
 
 ## v0.1.0
 
