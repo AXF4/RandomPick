@@ -859,7 +859,8 @@ async def setting(interaction: discord.Interaction):
 @app_commands.choices(lang=[
     app_commands.Choice(name="English", value="en"),
     app_commands.Choice(name="한국어 (Korean)", value="ko"),
-    app_commands.Choice(name="日本語 (Japanese)", value="ja")
+    app_commands.Choice(name="日本語 (Japanese)", value="ja"),
+    app_commands.Choice(name="NyanNyanMeow(CoolKittyPaw)", value="meow")
 ])
 async def language(interaction: discord.Interaction, lang: str):
     user_id_str = str(interaction.user.id)
