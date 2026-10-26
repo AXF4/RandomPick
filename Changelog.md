@@ -1,6 +1,6 @@
 # RandomPick Bot Update Log
 
-## Latest Version: v2.3.2
+## Latest Version: v2.4.0
 
 ## v0.1.0
 
@@ -138,3 +138,10 @@
 ## v2.3.2
 
 * Blocked `rating:questionable`
+
+## v2.4.0
+
+* Added `language` command
+* Added English, Korean, Japanese Language setting
+* fixed Discord embed image not displaying issue (uncertain)
+* write logs in log directory (only for devs)
