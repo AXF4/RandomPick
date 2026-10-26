@@ -41,7 +41,7 @@
   "BOOKMARK_ERROR": "⚠️ 메시지를 보내는 도중 오류가 발생했습니다.",
   "BOOKMARK_NOT_FOUND": "⚠️ 저장할 이미지를 찾을 수 없습니다.",
   
-  "DELETE_ONLY_REQUESTER": "🚫 아 요청을 보낸 사용자만 삭제할 수 있습니다.",
+  "DELETE_ONLY_REQUESTER": "🚫 요청을 보낸 사용자만 삭제할 수 있습니다.",
   "DELETE_NO_PERMISSION": "⚠️ 봇이 이 서버에 없거나 메시지를 삭제할 권한이 없습니다.",
   
   "SEARCH_PREFIX": "🔎 **`{tag}`**(으)로 검색 중...",
