@@ -24,13 +24,9 @@ UNDER_MAINTENANCE = False  # True -> maintenance
 cachekill = False        # True -> init global cache 
 
 TOKEN = os.getenv("TOKEN")
-GIPHY = os.getenv("GIPHY")
 
 raw_dev_ids = os.getenv("DEVID", "")
 DEV_IDS = {int(uid.strip()) for uid in raw_dev_ids.split(".") if uid.strip().isdigit()}
-
-GIPHY_SEARCH_URL = "https://api.giphy.com/v1/gifs/search"
-GIPHY_RANDOM_URL = "https://api.giphy.com/v1/gifs/random"
 
 DB_NAME = "settings.db"
 
@@ -855,7 +851,7 @@ async def setting(interaction: discord.Interaction):
             await interaction.response.send_message(t(user_lang, "SETTING_ERROR"), ephemeral=True)
 
 @bot.tree.command(name="language", description="Change your preferred language")
-@app_commands.describe(lang="Choose your language (en, ko)")
+@app_commands.describe(lang="Choose your language")
 @app_commands.choices(lang=[
     app_commands.Choice(name="English", value="en"),
     app_commands.Choice(name="한국어 (Korean)", value="ko"),
@@ -873,6 +869,25 @@ async def language(interaction: discord.Interaction, lang: str):
 
     res_msg = t(lang,"LANGUAGE_SET")
     await interaction.response.send_message(res_msg, ephemeral=True)
+
+@bot.tree.command(name="help", description="Show the commands")
+async def help(interaction: discord.Interaction):
+    user_lang = await get_user_lang(interaction.user.id)
+    embed = discord.Embed(title=t(user_lang, "HELP_TITLE"), description=t(user_lang, "HELP_DESC"), color=discord.Color.random())
+    
+    commands_list = [
+        ("help", "HELP_help"),
+        ("language", "HELP_language"),
+        ("faq", "HELP_faq"),
+        ("randompic", "HELP_randompic"),
+        ("randomemoji", "HELP_randomemoji"),
+        ("setting", "HELP_setting")
+    ]
+    
+    for command, desc in commands_list:
+        embed.add_field(name=f"```/{command}```", value=f"{t(user_lang, desc)}", inline=False)
+        
+    await interaction.response.send_message(embed=embed)
 
 wait_for_internet()
 bot.run(TOKEN)
