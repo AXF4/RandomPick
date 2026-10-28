@@ -73,5 +73,14 @@
   "FAQ_Q5": "Can I use this on my personal account?",
   "FAQ_A5": "[👉 Click here to add to your account!](https://discord.com/oauth2/authorize?client_id=1440352198709088306)",
   "FAQ_Q6": "Community Server",
-  "FAQ_A6": "[👉 Click Here!](https://discord.gg/HTDVkbWM3u)"
+  "FAQ_A6": "[👉 Click Here!](https://discord.gg/HTDVkbWM3u)",
+
+  "HELP_TITLE": "📜 Command List",
+  "HELP_DESC": "Here are all the commands you can use with this bot:",
+  "HELP_help": "THIS",
+  "HELP_language": "Change your preferred language setting.",
+  "HELP_faq": "View frequently asked questions and bot info.",
+  "HELP_randompic": "Fetches a random image from Safebooru. You can optionally specify tags.",
+  "HELP_randomemoji": "Sends a random emoji from servers the bot is in (optional: `gif` / `pic`).",
+  "HELP_setting": "Configure personal preferences (such as allowing/disallowing AI images)."
 }

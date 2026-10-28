@@ -41,7 +41,7 @@
   "BOOKMARK_ERROR": "⚠️ 메시지를 보내는 도중 오류가 발생했습니다.",
   "BOOKMARK_NOT_FOUND": "⚠️ 저장할 이미지를 찾을 수 없습니다.",
   
-  "DELETE_ONLY_REQUESTER": "🚫 요청을 보낸 사용자만 삭제할 수 있습니다.",
+  "DELETE_ONLY_REQUESTER": "🚫 이 요청을 보낸 사용자만 삭제할 수 있습니다.",
   "DELETE_NO_PERMISSION": "⚠️ 봇이 이 서버에 없거나 메시지를 삭제할 권한이 없습니다.",
   
   "SEARCH_PREFIX": "🔎 **`{tag}`**(으)로 검색 중...",
@@ -73,5 +73,14 @@
   "FAQ_Q5": "개인 계정(User App)에도 추가할 수 있나요?",
   "FAQ_A5": "[👉 여기를 클릭해서 계정에 추가하세요!](https://discord.com/oauth2/authorize?client_id=1440352198709088306)",
   "FAQ_Q6": "커뮤니티 서버",
-  "FAQ_A6": "[👉 여기를 클릭하세요!](https://discord.gg/HTDVkbWM3u)"
+  "FAQ_A6": "[👉 여기를 클릭하세요!](https://discord.gg/HTDVkbWM3u)",
+
+  "HELP_TITLE": "📜 명령어 목록",
+  "HELP_DESC": "사용 가능한 봇 명령어 안내입니다:",
+  "HELP_help": "지금 보고 있는 바로 그것!",
+  "HELP_language": "봇의 표시 언어를 변경합니다.",
+  "HELP_faq": "자주 묻는 질문(FAQ) 및 봇 정보를 확인합니다.",
+  "HELP_randompic": "Safebooru에서 랜덤 이미지를 가져옵니다. (선택: 태그 검색)",
+  "HELP_randomemoji": "봇이 참여 중인 서버의 커스텀 이모지를 랜덤으로 보냅니다. (선택: `gif` / `pic`)",
+  "HELP_setting": "개인 설정을 관리합니다. (AI 생성 이미지 포함 여부 등)"
 }

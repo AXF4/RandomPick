@@ -73,5 +73,14 @@
   "FAQ_Q5": "個人アカウント（User App）にも追加できますか？",
   "FAQ_A5": "[👉 ここをクリックしてアカウントに追加！](https://discord.com/oauth2/authorize?client_id=1440352198709088306)",
   "FAQ_Q6": "コミュニティサーバー",
-  "FAQ_A6": "[👉 ここをクリック！](https://discord.gg/HTDVkbWM3u)"
+  "FAQ_A6": "[👉 ここをクリック！](https://discord.gg/HTDVkbWM3u)",
+
+  "HELP_TITLE": "📜 コマンド一覧",
+  "HELP_DESC": "利用可能なコマンドの一覧です：",
+  "HELP_help": "まさにこれ。",
+  "HELP_language": "表示言語を変更します。",
+  "HELP_faq": "よくある質問(FAQ)とBotの情報を表示します。",
+  "HELP_randompic": "Safebooruからランダムな画像を取得します。（オプション：タグ指定）",
+  "HELP_randomemoji": "Botが参加しているサーバーのカスタム絵文字をランダムで送信します。（オプション：`gif` / `pic`）",
+  "HELP_setting": "個人設定を変更します。（AI生成画像の表示設定など）"
 }

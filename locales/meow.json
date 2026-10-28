@@ -1,5 +1,5 @@
 {
-  "LANGUAGE_SET": "Meow! Language has been set to English, nya.",
+  "LANGUAGE_SET": "WELCOME TO THE EMPIRE OF THE CATS",
 
   "MAINTENANCE": "Purr-lease understand, the service is taking a catnap (maintenance).",
   "TOO_FAST": "🐾 Too fast, human! Slow down and wait **{retry_after:.1f}** second, meow.",
@@ -20,7 +20,7 @@
   "SETTING_TITLE": "⚙️ Meow-st configure your **AI illustration settings, nya!**",
   "SETTING_ERROR": "⚠️ Oopsie! A hairball blocked the settings.",
   
-  "IMG_CAN_IDENTIFY": "⚠️ Meow? Cannot identify this image, nya",
+  "IMG_CANNOT_IDENTIFY": "⚠️ Meow? Cannot identify this image, nya",
   "IMG_COULD_NOT_LOAD": "⚠️ Failed to fetch the fish (data could not be loaded)",
   "IMG_COULD_NOT_FIND_SOURCE": "⚠️ Where did the mouse go? (Source not found)",
   "IMG_DETAILS_TITLE": "ℹ️ Cat's Eye View — Post #{post_id}",
@@ -73,5 +73,15 @@
   "FAQ_Q5": "Can I keep this cat on my own lap (personal account)?",
   "FAQ_A5": "[👉 Click here to adopt for your account, meow!](https://discord.com/oauth2/authorize?client_id=1440352198709088306)",
   "FAQ_Q6": "Cat Café (Community Server)",
-  "FAQ_A6": "[👉 Click Here to Purr Together!](https://discord.gg/HTDVkbWM3u)"
+  "FAQ_A6": "[👉 Click Here to Purr Together!](https://discord.gg/HTDVkbWM3u)",
+
+  "HELP_TITLE": "📜 Commeow List",
+  "HELP_DESC": "Sadly, you can-nyat use just *(Cat Sound)*",
+  "HELP_help": "DIS.",
+  "HELP_language": "Chew your purr-ed cat empire's language.",
+  "HELP_faq": "Meow-FAQ appears!",
+  "HELP_randompic": "Cat-ch a random chewy image from safebooru.",
+  "HELP_randomemoji": "Show a random yummy emoji from what I have (optional: `gif` / `pic`).",
+  "HELP_setting": "Set the feeding machine (such as AI candy)"
+
 }
