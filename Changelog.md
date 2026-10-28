@@ -150,3 +150,8 @@
 
 * Meow
 * Nyan
+
+## v2.6.0
+
+* Added `help` command
+* Fixed some typo
